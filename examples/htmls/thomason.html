@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Thomason family tree</title>
+  <link rel="shortcut icon" type="image/svg" href="/examples/logo.svg">
+  <script src="https://unpkg.com/d3@7"></script>
+  <link rel="stylesheet" href="/src/styles/family-chart.css">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      background: #1a1a1a;
+      color: #eee;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: #252525;
+      border-bottom: 1px solid #333;
+    }
+    .toolbar h1 {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 600;
+      flex: 1;
+      min-width: 160px;
+    }
+    .toolbar button {
+      font: inherit;
+      cursor: pointer;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #333;
+      color: #eee;
+    }
+    .toolbar button:hover {
+      background: #3d3d3d;
+    }
+    .toolbar button.primary {
+      background: #2d6a4f;
+      border-color: #40916c;
+    }
+    .toolbar button.primary:hover {
+      background: #40916c;
+    }
+    .toolbar .status {
+      font-size: 0.8125rem;
+      color: #999;
+    }
+    #FamilyChart.f3 {
+      width: 100%;
+      height: calc(100vh - 53px);
+      background-color: rgb(33, 33, 33);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <header class="toolbar">
+    <h1>Thomason family tree</h1>
+    <span class="status" id="save-status" aria-live="polite"></span>
+    <button type="button" id="btn-download" class="primary">Download JSON</button>
+    <button type="button" id="btn-reset">Reset from file</button>
+  </header>
+  <div id="FamilyChart" class="f3"></div>
+  <script type="module">
+import f3 from '../../src/index.js'
+
+const STORAGE_KEY = 'thomason-tree-data'
+const DATA_URL = '../../apps/thomason/data/thomason.json'
+
+const statusEl = document.getElementById('save-status')
+const btnDownload = document.getElementById('btn-download')
+const btnReset = document.getElementById('btn-reset')
+
+let f3EditTree
+
+function setStatus(text) {
+  statusEl.textContent = text
+}
+
+function loadInitialData() {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (saved) {
+    try {
+      return Promise.resolve(JSON.parse(saved))
+    } catch {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }
+  return fetch(DATA_URL).then((res) => {
+    if (!res.ok) throw new Error(`Failed to load ${DATA_URL}`)
+    return res.json()
+  })
+}
+
+function persist(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  setStatus('Saved in this browser')
+}
+
+let persistTimer
+function schedulePersist() {
+  clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    if (f3EditTree) persist(f3EditTree.exportData())
+  }, 400)
+}
+
+function downloadJson(json, filename) {
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+loadInitialData()
+  .then((data) => create(data))
+  .catch((err) => {
+    console.error(err)
+    setStatus('Could not load tree data')
+  })
+
+btnDownload.addEventListener('click', () => {
+  if (!f3EditTree) return
+  downloadJson(f3EditTree.getDataJson(), 'thomason.json')
+  setStatus('Downloaded thomason.json')
+})
+
+btnReset.addEventListener('click', () => {
+  if (!confirm('Discard browser-saved changes and reload from apps/thomason/data/thomason.json?')) return
+  localStorage.removeItem(STORAGE_KEY)
+  window.location.reload()
+})
+
+function create(data) {
+  const f3Chart = f3.createChart('#FamilyChart', data)
+    .setTransitionTime(1000)
+    .setCardXSpacing(250)
+    .setCardYSpacing(150)
+
+  const f3Card = f3Chart.setCardHtml()
+    .setCardDisplay([['first name', 'last name'], ['birthday']])
+
+  f3EditTree = f3Chart.editTree()
+    .setFields(['first name', 'last name', 'birthday', 'gender'])
+    .setEditFirst(true)
+    .setCardClickOpen(f3Card)
+    .setOnChange(() => schedulePersist())
+
+  f3Chart.updateTree({ initial: true })
+  f3EditTree.open(f3Chart.getMainDatum())
+  f3Chart.updateTree({ initial: true })
+
+  if (localStorage.getItem(STORAGE_KEY)) {
+    setStatus('Restored from this browser')
+  } else {
+    setStatus('Edit cards to build your tree')
+  }
+}
+  </script>
+</body>
+</html>

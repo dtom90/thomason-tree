@@ -1,4 +1,5 @@
 /dist/
+/apps/thomason/dist/
 /node_modules/
 /.idea/
 /.vscode/

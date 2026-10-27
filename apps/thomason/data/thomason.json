@@ -1,0 +1,40 @@
+[
+  {
+    "id": "0",
+    "data": {
+      "first name": "Ancestor",
+      "last name": "Thomason",
+      "birthday": "",
+      "gender": "M"
+    },
+    "rels": {
+      "spouses": ["1"],
+      "children": ["2"]
+    }
+  },
+  {
+    "id": "1",
+    "data": {
+      "first name": "Partner",
+      "last name": "Thomason",
+      "birthday": "",
+      "gender": "F"
+    },
+    "rels": {
+      "spouses": ["0"],
+      "children": ["2"]
+    }
+  },
+  {
+    "id": "2",
+    "data": {
+      "first name": "Child",
+      "last name": "Thomason",
+      "birthday": "",
+      "gender": "M"
+    },
+    "rels": {
+      "parents": ["0", "1"]
+    }
+  }
+]
