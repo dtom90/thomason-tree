@@ -73,7 +73,7 @@
 import f3 from '../../src/index.js'
 
 const STORAGE_KEY = 'thomason-tree-data'
-const DATA_URL = '../../apps/thomason/data/thomason.json'
+const DATA_URL = '../../app/thomason/data/thomason.json'
 
 const statusEl = document.getElementById('save-status')
 const btnDownload = document.getElementById('btn-download')
@@ -137,7 +137,7 @@ btnDownload.addEventListener('click', () => {
 })
 
 btnReset.addEventListener('click', () => {
-  if (!confirm('Discard browser-saved changes and reload from apps/thomason/data/thomason.json?')) return
+  if (!confirm('Discard browser-saved changes and reload from app/thomason/data/thomason.json?')) return
   localStorage.removeItem(STORAGE_KEY)
   window.location.reload()
 })

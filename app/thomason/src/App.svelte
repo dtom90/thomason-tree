@@ -63,7 +63,7 @@
   function handleReset() {
     if (
       !confirm(
-        'Discard browser-saved changes and reload the seed data from apps/thomason/data/thomason.json?',
+        'Discard browser-saved changes and reload the seed data from app/thomason/data/thomason.json?',
       )
     ) {
       return

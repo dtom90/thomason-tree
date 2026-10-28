@@ -45,8 +45,8 @@
     "test": "cypress open",
     "test-run": "cypress run",
     "dev": "vite",
-    "dev:thomason": "vite --config apps/thomason/vite.config.js",
-    "build:thomason": "vite build --config apps/thomason/vite.config.js",
+    "dev:thomason": "vite --config app/thomason/vite.config.js",
+    "build:thomason": "vite build --config app/thomason/vite.config.js",
     "docs": "typedoc",
     "docs:deploy": "yarn docs && gh-pages -d docs/api -b gh-pages",
     "prepublishOnly": "node prePublish.js"
