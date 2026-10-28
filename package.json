@@ -41,13 +41,13 @@
     "dist/types/**"
   ],
   "scripts": {
-    "build": "node build.js",
+    "dev": "vite --config app/thomason/vite.config.ts",
+    "build": "vite build --config app/thomason/vite.config.ts",
+    "check": "svelte-check --tsconfig app/thomason/tsconfig.json",
+    "dev:lib": "vite",
+    "build:lib": "node build.js",
     "test": "cypress open",
     "test-run": "cypress run",
-    "dev": "vite",
-    "dev:thomason": "vite --config app/thomason/vite.config.ts",
-    "build:thomason": "vite build --config app/thomason/vite.config.ts",
-    "check:thomason": "svelte-check --tsconfig app/thomason/tsconfig.json",
     "docs": "typedoc",
     "docs:deploy": "yarn docs && gh-pages -d docs/api -b gh-pages",
     "prepublishOnly": "node prePublish.js"
