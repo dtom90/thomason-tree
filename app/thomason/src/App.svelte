@@ -1,18 +1,18 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte'
-  import f3 from 'family-chart'
+  import f3, { type Data, type EditTree } from 'family-chart'
   import seedData from '../data/thomason.json'
   import {
     loadSavedTree,
     saveTree,
     clearSavedTree,
     downloadJson,
-  } from './thomason-storage.js'
+  } from './thomason-storage'
 
-  let chartEl
-  let status = 'Loading…'
-  let editTree
-  let persistTimer
+  let chartEl: HTMLDivElement | undefined = $state()
+  let status = $state('Loading…')
+  let editTree: EditTree | undefined
+  let persistTimer: ReturnType<typeof setTimeout> | undefined
 
   function schedulePersist() {
     clearTimeout(persistTimer)
@@ -23,7 +23,7 @@
     }, 400)
   }
 
-  function initChart(data) {
+  function initChart(data: Data) {
     if (!chartEl) return
     const f3Chart = f3.createChart(chartEl, data)
       .setTransitionTime(1000)
@@ -49,7 +49,7 @@
 
   onMount(() => {
     const saved = loadSavedTree()
-    const data = saved ?? seedData
+    const data = saved ?? (seedData as unknown as Data)
     initChart(data)
     status = saved ? 'Restored from this browser' : 'Edit cards to build your tree'
   })
@@ -76,8 +76,8 @@
 <header class="toolbar">
   <h1>Thomason family tree</h1>
   <span class="status" aria-live="polite">{status}</span>
-  <button type="button" class="primary" on:click={handleDownload}>Download JSON</button>
-  <button type="button" on:click={handleReset}>Reset from file</button>
+  <button type="button" class="primary" onclick={handleDownload}>Download JSON</button>
+  <button type="button" onclick={handleReset}>Reset from file</button>
 </header>
 
 <div class="f3" bind:this={chartEl}></div>

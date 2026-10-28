@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { resolve } from 'path'
 
-const root = resolve(__dirname)
+const root = resolve(import.meta.dirname)
 
 export default defineConfig({
   root,
