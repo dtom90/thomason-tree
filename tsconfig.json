@@ -6,7 +6,12 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "$lib": ["./app/thomason/src/lib"],
+      "$lib/*": ["./app/thomason/src/lib/*"]
+    }
   },
   "include": ["src"]
 }

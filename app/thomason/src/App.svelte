@@ -1,7 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { ModeWatcher } from 'mode-watcher'
+  import DownloadIcon from '@lucide/svelte/icons/download'
+  import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw'
   import f3, { type Data, type EditTree } from 'family-chart'
   import seedData from '../data/thomason.json'
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte'
+  import { Button } from '$lib/components/ui/button/index.js'
+  import { Badge } from '$lib/components/ui/badge/index.js'
+  import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
   import {
     loadSavedTree,
     saveTree,
@@ -11,6 +18,7 @@
 
   let chartEl: HTMLDivElement | undefined = $state()
   let status = $state('Loading…')
+  let resetOpen = $state(false)
   let editTree: EditTree | undefined
   let persistTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -60,79 +68,47 @@
     status = 'Downloaded thomason.json'
   }
 
-  function handleReset() {
-    if (
-      !confirm(
-        'Discard browser-saved changes and reload the seed data from app/thomason/data/thomason.json?',
-      )
-    ) {
-      return
-    }
+  function confirmReset() {
     clearSavedTree()
     window.location.reload()
   }
 </script>
 
-<header class="toolbar">
-  <h1>Thomason family tree</h1>
-  <span class="status" aria-live="polite">{status}</span>
-  <button type="button" class="primary" onclick={handleDownload}>Download JSON</button>
-  <button type="button" onclick={handleReset}>Reset from file</button>
+<ModeWatcher />
+
+<header
+  class="flex h-14 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 shadow-sm"
+>
+  <h1 class="min-w-[10rem] flex-1 text-base font-semibold tracking-tight">
+    Thomason family tree
+  </h1>
+  <Badge variant="secondary" class="max-w-[min(100%,20rem)] truncate font-normal">
+    {status}
+  </Badge>
+  <ThemeToggle />
+  <Button type="button" onclick={handleDownload}>
+    <DownloadIcon />
+    Download JSON
+  </Button>
+  <Button variant="outline" type="button" onclick={() => (resetOpen = true)}>
+    <RotateCcwIcon />
+    Reset
+  </Button>
+  <AlertDialog.Root bind:open={resetOpen}>
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>Reset tree data?</AlertDialog.Title>
+        <AlertDialog.Description>
+          This discards browser-saved changes and reloads the seed data from
+          <code class="rounded bg-muted px-1 py-0.5 text-xs">app/thomason/data/thomason.json</code>.
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+        <AlertDialog.Action onclick={confirmReset}>Reset</AlertDialog.Action>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
 </header>
 
-<div class="f3" bind:this={chartEl}></div>
-
-<style>
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 12px 16px;
-    background: #252525;
-    border-bottom: 1px solid #333;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    flex: 1;
-    min-width: 160px;
-  }
-
-  button {
-    font: inherit;
-    cursor: pointer;
-    padding: 8px 14px;
-    border-radius: 6px;
-    border: 1px solid #444;
-    background: #333;
-    color: #eee;
-  }
-
-  button:hover {
-    background: #3d3d3d;
-  }
-
-  button.primary {
-    background: #2d6a4f;
-    border-color: #40916c;
-  }
-
-  button.primary:hover {
-    background: #40916c;
-  }
-
-  .status {
-    font-size: 0.8125rem;
-    color: #999;
-  }
-
-  .f3 {
-    width: 100%;
-    height: calc(100vh - 53px);
-    background-color: rgb(33, 33, 33);
-    color: #fff;
-  }
-</style>
+<div class="f3 chart-root" bind:this={chartEl}></div>
