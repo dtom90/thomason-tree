@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { ModeWatcher } from 'mode-watcher'
-  import DownloadIcon from '@lucide/svelte/icons/download'
   import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw'
   import f3, { type Data, type EditTree } from 'family-chart'
   import seedData from '../data/thomason.json'
@@ -9,12 +8,7 @@
   import { Button } from '$lib/components/ui/button/index.js'
   import { Badge } from '$lib/components/ui/badge/index.js'
   import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
-  import {
-    loadSavedTree,
-    saveTree,
-    clearSavedTree,
-    downloadJson,
-  } from './thomason-storage'
+  import { loadSavedTree, saveTree, clearSavedTree } from './thomason-storage'
 
   let chartEl: HTMLDivElement | undefined = $state()
   let status = $state('Loading…')
@@ -62,12 +56,6 @@
     status = saved ? 'Restored from this browser' : 'Edit cards to build your tree'
   })
 
-  function handleDownload() {
-    if (!editTree) return
-    downloadJson(editTree.getDataJson(), 'thomason.json')
-    status = 'Downloaded thomason.json'
-  }
-
   function confirmReset() {
     clearSavedTree()
     window.location.reload()
@@ -86,10 +74,6 @@
     {status}
   </Badge>
   <ThemeToggle />
-  <Button type="button" onclick={handleDownload}>
-    <DownloadIcon />
-    Download JSON
-  </Button>
   <Button variant="outline" type="button" onclick={() => (resetOpen = true)}>
     <RotateCcwIcon />
     Reset
