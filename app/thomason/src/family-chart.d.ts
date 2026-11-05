@@ -36,6 +36,7 @@ declare module 'family-chart' {
     setCardHtml(): CardHtml
     editTree(): EditTree
     updateTree(props: { initial?: boolean }): void
+    updateMainId(id: string): Chart
     getMainDatum(): Datum | undefined
   }
 

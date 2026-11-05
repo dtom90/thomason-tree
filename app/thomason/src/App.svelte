@@ -2,32 +2,56 @@
   import { onMount } from 'svelte'
   import { ModeWatcher } from 'mode-watcher'
   import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw'
+  import LogOutIcon from '@lucide/svelte/icons/log-out'
   import f3, { type Data, type EditTree } from 'family-chart'
-  import seedData from '../data/thomason.json'
+  import type { Session } from '@supabase/supabase-js'
   import ThemeToggle from '$lib/components/ThemeToggle.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
   import { Badge } from '$lib/components/ui/badge/index.js'
   import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
-  import { loadSavedTree, saveTree, clearSavedTree } from './thomason-storage'
+  import { supabase } from '$lib/supabase'
+  import AuthForm from './AuthForm.svelte'
+  import { loadTree, resetTreeToSeed, saveTree } from './thomason-storage'
+  import type { LinkedPerson } from './tree-mapper'
 
   let chartEl: HTMLDivElement | undefined = $state()
+  let session = $state<Session | null>(null)
+  let authReady = $state(false)
   let status = $state('Loading…')
   let resetOpen = $state(false)
+  let linkedPerson = $state<LinkedPerson | null>(null)
   let editTree: EditTree | undefined
   let persistTimer: ReturnType<typeof setTimeout> | undefined
+  let loadGeneration = 0
+
+  const canEdit = $derived(linkedPerson?.can_edit === true)
 
   function schedulePersist() {
+    if (!canEdit) return
     clearTimeout(persistTimer)
-    persistTimer = setTimeout(() => {
+    persistTimer = setTimeout(async () => {
       if (!editTree) return
-      saveTree(editTree.exportData())
-      status = 'Saved in this browser'
+      try {
+        await saveTree(editTree.exportData())
+        status = 'Saved'
+      } catch (err) {
+        status = err instanceof Error ? err.message : 'Save failed'
+      }
     }, 400)
   }
 
-  function initChart(data: Data) {
+  function destroyChart() {
+    clearTimeout(persistTimer)
+    editTree = undefined
+    if (chartEl) chartEl.innerHTML = ''
+  }
+
+  function initChart(data: Data, centerId: string | null, editable: boolean) {
     if (!chartEl) return
-    const f3Chart = f3.createChart(chartEl, data)
+    destroyChart()
+
+    const f3Chart = f3
+      .createChart(chartEl, data)
       .setTransitionTime(1000)
       .setCardXSpacing(250)
       .setCardYSpacing(150)
@@ -37,62 +61,154 @@
       ['birthday'],
     ])
 
-    editTree = f3Chart
-      .editTree()
-      .setFields(['first name', 'last name', 'birthday', 'gender'])
-      .setEditFirst(true)
-      .setCardClickOpen(f3Card)
-      .setOnChange(() => schedulePersist())
+    if (centerId && data.some((d) => d.id === centerId)) {
+      f3Chart.updateMainId(centerId)
+    }
 
-    f3Chart.updateTree({ initial: true })
-    editTree.open(f3Chart.getMainDatum())
-    f3Chart.updateTree({ initial: true })
+    if (editable) {
+      editTree = f3Chart
+        .editTree()
+        .setFields(['first name', 'last name', 'birthday', 'gender'])
+        .setEditFirst(true)
+        .setCardClickOpen(f3Card)
+        .setOnChange(() => schedulePersist())
+
+      f3Chart.updateTree({ initial: true })
+      editTree.open(f3Chart.getMainDatum())
+      f3Chart.updateTree({ initial: true })
+    } else {
+      f3Chart.updateTree({ initial: true })
+    }
+  }
+
+  async function bootstrapTree() {
+    if (!chartEl) return
+    const generation = ++loadGeneration
+    status = 'Loading tree…'
+    try {
+      const result = await loadTree()
+      if (generation !== loadGeneration) return
+      linkedPerson = result.linkedPerson
+      initChart(result.data, result.linkedPerson?.id ?? null, result.linkedPerson?.can_edit === true)
+      status =
+        result.linkedPerson?.can_edit === true
+          ? 'Editor — changes save to Supabase'
+          : 'Viewer — read only'
+    } catch (err) {
+      if (generation !== loadGeneration) return
+      status = err instanceof Error ? err.message : 'Failed to load tree'
+    }
   }
 
   onMount(() => {
-    const saved = loadSavedTree()
-    const data = saved ?? (seedData as unknown as Data)
-    initChart(data)
-    status = saved ? 'Restored from this browser' : 'Edit cards to build your tree'
+    let unsubscribed = false
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (unsubscribed) return
+      session = data.session
+      authReady = true
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, next) => {
+      session = next
+      authReady = true
+    })
+
+    return () => {
+      unsubscribed = true
+      subscription.unsubscribe()
+      clearTimeout(persistTimer)
+    }
   })
 
-  function confirmReset() {
-    clearSavedTree()
-    window.location.reload()
+  $effect(() => {
+    if (!authReady) return
+
+    if (!session) {
+      destroyChart()
+      linkedPerson = null
+      status = 'Signed out'
+      return
+    }
+
+    if (!chartEl) return
+
+    const userId = session.user.id
+    void userId
+    void bootstrapTree()
+  })
+
+  async function signOut() {
+    destroyChart()
+    await supabase.auth.signOut()
+  }
+
+  async function confirmReset() {
+    resetOpen = false
+    status = 'Resetting…'
+    try {
+      await resetTreeToSeed()
+      await bootstrapTree()
+      status = 'Reset to seed'
+    } catch (err) {
+      status = err instanceof Error ? err.message : 'Reset failed'
+    }
   }
 </script>
 
 <ModeWatcher />
 
-<header
-  class="flex h-14 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 shadow-sm"
->
-  <h1 class="min-w-[10rem] flex-1 text-base font-semibold tracking-tight">
-    Thomason family tree
-  </h1>
-  <Badge variant="secondary" class="max-w-[min(100%,20rem)] truncate font-normal">
-    {status}
-  </Badge>
-  <ThemeToggle />
-  <Button variant="outline" type="button" onclick={() => (resetOpen = true)}>
-    <RotateCcwIcon />
-    Reset
-  </Button>
-  <AlertDialog.Root bind:open={resetOpen}>
-    <AlertDialog.Content>
-      <AlertDialog.Header>
-        <AlertDialog.Title>Reset tree data?</AlertDialog.Title>
-        <AlertDialog.Description>
-          This discards browser-saved changes and reloads the seed data from
-          <code class="rounded bg-muted px-1 py-0.5 text-xs">app/thomason/data/thomason.json</code>.
-        </AlertDialog.Description>
-      </AlertDialog.Header>
-      <AlertDialog.Footer>
-        <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-        <AlertDialog.Action onclick={confirmReset}>Reset</AlertDialog.Action>
-      </AlertDialog.Footer>
-    </AlertDialog.Content>
-  </AlertDialog.Root>
-</header>
+{#if !authReady}
+  <div class="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">
+    Loading…
+  </div>
+{:else if !session}
+  <AuthForm />
+{:else}
+  <header
+    class="flex h-14 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 shadow-sm"
+  >
+    <h1 class="min-w-[10rem] flex-1 text-base font-semibold tracking-tight">
+      Thomason family tree
+    </h1>
+    <Badge variant="secondary" class="font-normal">
+      {canEdit ? 'Editor' : 'Viewer'}
+    </Badge>
+    <Badge variant="secondary" class="max-w-[min(100%,16rem)] truncate font-normal">
+      {status}
+    </Badge>
+    <span class="hidden max-w-[12rem] truncate text-sm text-muted-foreground sm:inline">
+      {session.user.email}
+    </span>
+    <ThemeToggle />
+    {#if canEdit}
+      <Button variant="outline" type="button" onclick={() => (resetOpen = true)}>
+        <RotateCcwIcon />
+        Reset
+      </Button>
+    {/if}
+    <Button variant="outline" type="button" onclick={signOut}>
+      <LogOutIcon />
+      Sign out
+    </Button>
+    <AlertDialog.Root bind:open={resetOpen}>
+      <AlertDialog.Content>
+        <AlertDialog.Header>
+          <AlertDialog.Title>Reset tree data?</AlertDialog.Title>
+          <AlertDialog.Description>
+            This replaces the shared tree with the seed data. Account links on matching person ids
+            are kept.
+          </AlertDialog.Description>
+        </AlertDialog.Header>
+        <AlertDialog.Footer>
+          <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+          <AlertDialog.Action onclick={confirmReset}>Reset</AlertDialog.Action>
+        </AlertDialog.Footer>
+      </AlertDialog.Content>
+    </AlertDialog.Root>
+  </header>
 
-<div class="f3 chart-root" bind:this={chartEl}></div>
+  <div class="f3 chart-root" bind:this={chartEl}></div>
+{/if}
