@@ -96,7 +96,13 @@
           : 'Viewer — read only'
     } catch (err) {
       if (generation !== loadGeneration) return
-      status = err instanceof Error ? err.message : 'Failed to load tree'
+      console.error('Failed to load tree', err)
+      status =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Failed to load tree'
     }
   }
 
@@ -168,31 +174,33 @@
   <AuthForm />
 {:else}
   <header
-    class="flex h-14 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 shadow-sm"
+    class="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80"
   >
-    <h1 class="min-w-[10rem] flex-1 text-base font-semibold tracking-tight">
+    <h1 class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight">
       Thomason family tree
     </h1>
-    <Badge variant="secondary" class="font-normal">
+    <Badge variant="secondary" class="hidden font-normal sm:inline-flex">
       {canEdit ? 'Editor' : 'Viewer'}
     </Badge>
-    <Badge variant="secondary" class="max-w-[min(100%,16rem)] truncate font-normal">
+    <span class="hidden max-w-[14rem] truncate text-sm text-muted-foreground md:inline" title={status}>
       {status}
-    </Badge>
-    <span class="hidden max-w-[12rem] truncate text-sm text-muted-foreground sm:inline">
+    </span>
+    <span class="hidden max-w-[12rem] truncate text-sm text-muted-foreground lg:inline">
       {session.user.email}
     </span>
-    <ThemeToggle />
-    {#if canEdit}
-      <Button variant="outline" type="button" onclick={() => (resetOpen = true)}>
-        <RotateCcwIcon />
-        Reset
+    <div class="ml-1 flex items-center gap-1.5">
+      <ThemeToggle />
+      {#if canEdit}
+        <Button variant="ghost" size="sm" type="button" onclick={() => (resetOpen = true)}>
+          <RotateCcwIcon />
+          Reset
+        </Button>
+      {/if}
+      <Button variant="ghost" size="sm" type="button" onclick={signOut}>
+        <LogOutIcon />
+        Sign out
       </Button>
-    {/if}
-    <Button variant="outline" type="button" onclick={signOut}>
-      <LogOutIcon />
-      Sign out
-    </Button>
+    </div>
     <AlertDialog.Root bind:open={resetOpen}>
       <AlertDialog.Content>
         <AlertDialog.Header>

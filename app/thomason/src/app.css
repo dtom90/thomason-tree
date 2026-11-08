@@ -105,11 +105,45 @@
 .f3.chart-root {
   width: 100%;
   height: calc(100vh - 3.5rem);
-  --background-color: var(--f3-surface);
+  --background-color: var(--card);
   --text-color: var(--foreground);
   --female-color: var(--f3-female);
   --male-color: var(--f3-male);
   --genderless-color: var(--f3-genderless);
   color: var(--foreground);
   background-color: var(--f3-surface);
+  font-family: inherit;
+}
+
+.f3.chart-root .f3-form-cont {
+  background-color: var(--card);
+  border-left-color: var(--border);
+  box-shadow: -12px 0 32px color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.f3.chart-root .f3-form {
+  --f3-form-accent: oklch(0.55 0.14 145);
+  --f3-form-accent-hover: oklch(0.48 0.13 145);
+  --f3-form-danger: var(--destructive);
+  --f3-form-border: var(--border);
+  --f3-form-muted: var(--muted-foreground);
+  --f3-form-soft: var(--muted);
+  --f3-form-soft-strong: color-mix(in srgb, var(--muted) 80%, var(--foreground));
+}
+
+.dark .f3.chart-root .f3-form {
+  --f3-form-accent: oklch(0.72 0.14 145);
+  --f3-form-accent-hover: oklch(0.78 0.12 145);
+  --f3-form-soft-strong: color-mix(in srgb, var(--muted) 70%, white);
+}
+
+.f3.chart-root .f3-form input[type='text'],
+.f3.chart-root .f3-form textarea,
+.f3.chart-root .f3-form select {
+  background: var(--background);
+}
+
+.f3.chart-root .f3-radio-group label:has(input:checked) {
+  background: var(--card);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 10%, transparent);
 }

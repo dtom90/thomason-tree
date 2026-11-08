@@ -107,150 +107,320 @@
 
 
 /* form-info */
+.f3-form {
+  --f3-form-accent: #4caf50;
+  --f3-form-accent-hover: #43a047;
+  --f3-form-danger: #e53935;
+  --f3-form-danger-hover: #c62828;
+  --f3-form-border: color-mix(in srgb, var(--text-color) 16%, transparent);
+  --f3-form-muted: color-mix(in srgb, var(--text-color) 62%, transparent);
+  --f3-form-soft: color-mix(in srgb, var(--text-color) 6%, transparent);
+  --f3-form-soft-strong: color-mix(in srgb, var(--text-color) 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 18px 24px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.f3-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.f3-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .f3-form input[type="text"],
 .f3-form textarea,
 .f3-form select {
   width: 100%;
-  padding: 8px 12px;
-  margin: 8px 0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--f3-form-border);
+  border-radius: 8px;
   box-sizing: border-box;
-  font-size: 14px;
-  background: var(--background-color);
+  font: inherit;
+  background: var(--f3-form-soft);
   color: currentColor;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.f3-form textarea {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .f3-form input[type="text"]:focus,
 .f3-form textarea:focus,
 .f3-form select:focus {
-  box-shadow: 0 0 5px rgba(76, 175, 80, 0.2);
+  border-color: color-mix(in srgb, var(--f3-form-accent) 70%, var(--f3-form-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--f3-form-accent) 22%, transparent);
+  background: transparent;
 }
 
 .f3-form button {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
+  margin: 0;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
-  margin: 10px 0;
-  transition: background-color 0.3s ease-in-out, border-color 0.3s ease-in-out, color 0.3s ease-in-out;
+  font: inherit;
+  font-weight: 500;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
 .f3-form button[type="submit"] {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.f3-cancel-btn {
-  background-color: #ccc;
-}
-
-.f3-form .f3-delete-btn {
-  background-color: transparent;
-  border: 1px solid #f44336;
-  color: #f44336;
-  width: 100%;
-  padding: 5px 10px;
-}
-
-.f3-delete-btn:hover {
-  background-color: #da190b;
-  border-color: #da190b;
+  background-color: var(--f3-form-accent);
+  border-color: var(--f3-form-accent);
   color: #fff;
 }
 
-.f3-delete-btn:disabled {
-  opacity: 0.5;
+.f3-form button[type="submit"]:hover {
+  background-color: var(--f3-form-accent-hover);
+  border-color: var(--f3-form-accent-hover);
+}
+
+.f3-form .f3-cancel-btn {
   background-color: transparent;
-  color: #f44336;
+  border-color: var(--f3-form-border);
+  color: currentColor;
+}
+
+.f3-form .f3-cancel-btn:hover {
+  background-color: var(--f3-form-soft-strong);
+}
+
+.f3-form-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--f3-form-border);
+}
+
+.f3-form .f3-delete-btn,
+.f3-form .f3-remove-relative-btn {
+  width: 100%;
+  background-color: transparent;
+  padding: 8px 12px;
+}
+
+.f3-form .f3-delete-btn {
+  border-color: color-mix(in srgb, var(--f3-form-danger) 55%, transparent);
+  color: var(--f3-form-danger);
+}
+
+.f3-form .f3-delete-btn:hover:not(:disabled) {
+  background-color: var(--f3-form-danger);
+  border-color: var(--f3-form-danger);
+  color: #fff;
+}
+
+.f3-form .f3-delete-btn:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .f3-form .f3-remove-relative-btn {
-  background-color: transparent;
-  border: 1px solid currentColor;
-  color: currentColor;
-  width: 100%;
-  padding: 5px 10px;
+  border-color: var(--f3-form-border);
+  color: var(--f3-form-muted);
 }
 
-.f3-remove-relative-btn:hover, .f3-remove-relative-btn.active {
+.f3-form .f3-remove-relative-btn:hover,
+.f3-form .f3-remove-relative-btn.active {
   background-color: var(--text-color);
   border-color: var(--text-color);
   color: var(--background-color);
 }
 
 .f3-radio-group {
-  margin: 15px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--f3-form-soft);
 }
 
 .f3-radio-group label {
-  margin-right: 15px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 7px;
   cursor: pointer;
+  color: var(--f3-form-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .f3-radio-group input[type="radio"] {
-  margin-right: 5px;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.f3-info-field-label, .f3-form-field label {
-  font-weight: bold;
-  font-size: 12px;
+.f3-radio-group label:has(input:checked) {
+  background: color-mix(in srgb, var(--background-color) 88%, var(--text-color));
+  color: var(--text-color);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-color) 12%, transparent);
+}
+
+.f3-radio-group label:hover {
+  color: var(--text-color);
+}
+
+.f3-info-field-label,
+.f3-form-field label,
+.f3-link-existing-relative label {
   display: block;
-  opacity: 0.8;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+  color: var(--f3-form-muted);
+}
+
+.f3-info-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .f3-info-field-value {
-  font-weight: normal;
   display: block;
+  min-height: 20px;
+  padding-bottom: 6px;
   border: none;
+  border-bottom: 1px solid var(--f3-form-border);
   outline: none;
-  border-bottom: 1px solid rgba(255,255,255,0.2);
-  padding-bottom: 1px;
-  margin-bottom: 10px;
-  min-height: 18px;
+  font-weight: 500;
 }
 
 .f3-form-buttons {
-  text-align: right;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .f3-form-title {
+  margin: 4px 28px 0;
   text-align: center;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .f3-form.non-editable .f3-form-buttons,
-.f3-form.non-editable .f3-delete-btn,
-.f3-form.non-editable .f3-remove-relative-btn,
+.f3-form.non-editable .f3-form-danger,
+.f3-form.non-editable .f3-add-relative-btn,
 .f3-form.non-editable .f3-link-existing-relative {
   display: none;
 }
 
-.f3-close-btn {
-  cursor: pointer;
+.f3-form .f3-close-btn {
   position: absolute;
+  top: 10px;
   left: 10px;
-  top: 8px;
-  font-size: 30px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--f3-form-muted);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.f3-form .f3-close-btn:hover {
+  background: var(--f3-form-soft-strong);
   color: var(--text-color);
 }
 
-.f3-edit-btn {
-  position: relative;
-  top: -1px;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-  display: inline-block;
+.f3-form-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 28px;
+  padding-left: 28px;
 }
 
-.f3-add-relative-btn {
+.f3-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   cursor: pointer;
-  width: 27px;
-  height: 27px;
-  margin-right: 5px;
-  display: inline-block;
+  opacity: 0.7;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.f3-edit-btn:hover {
+  background: var(--f3-form-soft-strong);
+  opacity: 1;
+}
+
+.f3-form .f3-add-relative-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--f3-form-accent) 55%, transparent);
+  color: var(--f3-form-accent);
+  font-weight: 600;
+}
+
+.f3-form .f3-add-relative-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.f3-form .f3-add-relative-btn:hover {
+  background-color: color-mix(in srgb, var(--f3-form-accent) 12%, transparent);
+  border-color: var(--f3-form-accent);
+}
+
+.f3-form .f3-add-relative-btn.active {
+  background-color: transparent;
+  border-color: var(--f3-form-border);
+  color: currentColor;
+}
+
+.f3-form .f3-add-relative-btn.active:hover {
+  background-color: var(--f3-form-soft-strong);
+}
+
+.f3-link-existing-relative {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
 }
 
 /* card-html */
@@ -517,11 +687,11 @@
   transform: translate(0, -2px);
 }
 .f3 div.card-main .card-inner, .f3 div.card:hover .card-inner {
-  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.8);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-color) 18%, transparent);
 }
 
 .f3 div.card-main .card-inner {
-  outline: 4px solid rgba(220, 220, 220, 1);
+  outline: 3px solid color-mix(in srgb, var(--text-color) 28%, transparent);
 }
 
 .f3 div.card-inner.f3-path-to-main {
@@ -550,21 +720,18 @@
   background-color: var(--background-color);
   overflow: auto;
   flex: 0 0 auto;
-  box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.5);
+  border-left: 1px solid color-mix(in srgb, var(--text-color) 12%, transparent);
+  box-shadow: -8px 0 24px color-mix(in srgb, var(--text-color) 8%, transparent);
 }
 
 .f3-form-cont.opened {
-  width: 350px;
-}
-
-.f3-form {
-  padding: 20px;
+  width: 360px;
 }
 
 .f3-form hr {
-  border-style: solid; 
-  border-width: thin 0 0 0;
-  opacity: 0.15;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--text-color) 12%, transparent);
+  margin: 4px 0;
 }
 
 .f3-nav-cont {
