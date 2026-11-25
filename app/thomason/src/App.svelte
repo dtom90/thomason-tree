@@ -3,6 +3,7 @@
   import { ModeWatcher } from 'mode-watcher'
   import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw'
   import LogOutIcon from '@lucide/svelte/icons/log-out'
+  import ImagesIcon from '@lucide/svelte/icons/images'
   import f3, { type Data, type EditTree } from 'family-chart'
   import type { Session } from '@supabase/supabase-js'
   import ThemeToggle from '$lib/components/ThemeToggle.svelte'
@@ -11,6 +12,7 @@
   import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
   import { supabase } from '$lib/supabase'
   import AuthForm from './AuthForm.svelte'
+  import DriveBrowser from './DriveBrowser.svelte'
   import { loadTree, resetTreeToSeed, saveTree } from './thomason-storage'
   import type { LinkedPerson } from './tree-mapper'
 
@@ -19,6 +21,7 @@
   let authReady = $state(false)
   let status = $state('Loading…')
   let resetOpen = $state(false)
+  let photosOpen = $state(false)
   let linkedPerson = $state<LinkedPerson | null>(null)
   let editTree: EditTree | undefined
   let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -190,6 +193,10 @@
     </span>
     <div class="ml-1 flex items-center gap-1.5">
       <ThemeToggle />
+      <Button variant="ghost" size="sm" type="button" onclick={() => (photosOpen = true)}>
+        <ImagesIcon />
+        Photos
+      </Button>
       {#if canEdit}
         <Button variant="ghost" size="sm" type="button" onclick={() => (resetOpen = true)}>
           <RotateCcwIcon />
@@ -219,4 +226,8 @@
   </header>
 
   <div class="f3 chart-root" bind:this={chartEl}></div>
+
+  {#if photosOpen}
+    <DriveBrowser onClose={() => (photosOpen = false)} />
+  {/if}
 {/if}

@@ -1,0 +1,394 @@
+<script lang="ts">
+  import { onDestroy, onMount } from 'svelte'
+  import XIcon from '@lucide/svelte/icons/x'
+  import Trash2Icon from '@lucide/svelte/icons/trash-2'
+  import { Button } from '$lib/components/ui/button/index.js'
+  import { supabase } from '$lib/supabase'
+  import {
+    createComment,
+    createRegion,
+    deleteComment,
+    deleteRegion,
+    fetchDriveImageUrl,
+    listComments,
+    listRegions,
+    updateRegionLabel,
+    type PhotoComment,
+    type PhotoRegion,
+  } from './drive-api'
+
+  type Props = {
+    fileId: string
+    fileName: string
+    onClose: () => void
+  }
+
+  let { fileId, fileName, onClose }: Props = $props()
+
+  let imageUrl = $state<string | null>(null)
+  let loadError = $state<string | null>(null)
+  let regions = $state<PhotoRegion[]>([])
+  let comments = $state<PhotoComment[]>([])
+  let selectedRegionId = $state<string | null>(null)
+  let currentUserId = $state<string | null>(null)
+  let drawing = $state(false)
+  let drawStart = $state<{ x: number; y: number } | null>(null)
+  let draftBox = $state<{ x: number; y: number; w: number; h: number } | null>(null)
+  let pendingLabel = $state('')
+  let showLabelPrompt = $state(false)
+  let commentBody = $state('')
+  let busy = $state(false)
+  let stageEl: HTMLDivElement | undefined = $state()
+
+  const selectedRegion = $derived(regions.find((r) => r.id === selectedRegionId) ?? null)
+  const visibleComments = $derived(
+    selectedRegionId
+      ? comments.filter((c) => c.region_id === selectedRegionId)
+      : comments.filter((c) => c.region_id == null),
+  )
+
+  async function loadAll() {
+    loadError = null
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      currentUserId = user?.id ?? null
+      if (imageUrl) URL.revokeObjectURL(imageUrl)
+      imageUrl = await fetchDriveImageUrl(fileId, 'full')
+      ;[regions, comments] = await Promise.all([listRegions(fileId), listComments(fileId)])
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to load photo'
+    }
+  }
+
+  onMount(() => {
+    void loadAll()
+  })
+
+  onDestroy(() => {
+    if (imageUrl) URL.revokeObjectURL(imageUrl)
+  })
+
+  function normFromEvent(e: PointerEvent): { x: number; y: number } | null {
+    if (!stageEl) return null
+    const rect = stageEl.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return null
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+    }
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    if (e.button !== 0 || showLabelPrompt) return
+    const p = normFromEvent(e)
+    if (!p) return
+    drawing = true
+    drawStart = p
+    draftBox = { x: p.x, y: p.y, w: 0, h: 0 }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  function onPointerMove(e: PointerEvent) {
+    if (!drawing || !drawStart) return
+    const p = normFromEvent(e)
+    if (!p) return
+    const x = Math.min(drawStart.x, p.x)
+    const y = Math.min(drawStart.y, p.y)
+    const w = Math.abs(p.x - drawStart.x)
+    const h = Math.abs(p.y - drawStart.y)
+    draftBox = { x, y, w, h }
+  }
+
+  function onPointerUp() {
+    if (!drawing) return
+    drawing = false
+    drawStart = null
+    if (!draftBox || draftBox.w < 0.02 || draftBox.h < 0.02) {
+      draftBox = null
+      return
+    }
+    pendingLabel = ''
+    showLabelPrompt = true
+  }
+
+  async function confirmRegion() {
+    if (!draftBox) return
+    busy = true
+    try {
+      const region = await createRegion({
+        drive_file_id: fileId,
+        x: draftBox.x,
+        y: draftBox.y,
+        w: draftBox.w,
+        h: draftBox.h,
+        label: pendingLabel.trim() || null,
+      })
+      regions = [...regions, region]
+      selectedRegionId = region.id
+      draftBox = null
+      showLabelPrompt = false
+      pendingLabel = ''
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to save box'
+    } finally {
+      busy = false
+    }
+  }
+
+  function cancelRegion() {
+    draftBox = null
+    showLabelPrompt = false
+    pendingLabel = ''
+  }
+
+  async function saveLabel() {
+    if (!selectedRegion) return
+    busy = true
+    try {
+      const updated = await updateRegionLabel(selectedRegion.id, pendingLabel.trim() || null)
+      regions = regions.map((r) => (r.id === updated.id ? updated : r))
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to update label'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function removeRegion(id: string) {
+    busy = true
+    try {
+      await deleteRegion(id)
+      regions = regions.filter((r) => r.id !== id)
+      comments = comments.map((c) => (c.region_id === id ? { ...c, region_id: null } : c))
+      if (selectedRegionId === id) selectedRegionId = null
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to delete box'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function submitComment() {
+    const body = commentBody.trim()
+    if (!body) return
+    busy = true
+    try {
+      const comment = await createComment({
+        drive_file_id: fileId,
+        body,
+        region_id: selectedRegionId,
+      })
+      comments = [...comments, comment]
+      commentBody = ''
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to post comment'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function removeComment(id: string) {
+    busy = true
+    try {
+      await deleteComment(id)
+      comments = comments.filter((c) => c.id !== id)
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to delete comment'
+    } finally {
+      busy = false
+    }
+  }
+
+  function selectRegion(id: string) {
+    selectedRegionId = selectedRegionId === id ? null : id
+    if (selectedRegionId) {
+      const r = regions.find((x) => x.id === selectedRegionId)
+      pendingLabel = r?.label ?? ''
+    }
+  }
+
+  function formatTime(iso: string) {
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    } catch {
+      return iso
+    }
+  }
+</script>
+
+<div class="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
+  <header class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+    <h2 class="min-w-0 flex-1 truncate text-base font-semibold">{fileName}</h2>
+    <Button variant="ghost" size="sm" type="button" onclick={onClose}>
+      <XIcon />
+      Close
+    </Button>
+  </header>
+
+  <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
+    <div class="relative flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/40 p-4">
+      {#if loadError && !imageUrl}
+        <p class="text-sm text-destructive">{loadError}</p>
+      {:else if !imageUrl}
+        <p class="text-sm text-muted-foreground">Loading image…</p>
+      {:else}
+        <div
+          bind:this={stageEl}
+          class="relative max-h-full max-w-full touch-none select-none"
+          role="application"
+          aria-label="Photo annotation canvas. Drag to draw a face box."
+          onpointerdown={onPointerDown}
+          onpointermove={onPointerMove}
+          onpointerup={onPointerUp}
+          onpointercancel={onPointerUp}
+        >
+          <img src={imageUrl} alt={fileName} class="block max-h-[min(80dvh,900px)] max-w-full object-contain" draggable="false" />
+          <div class="pointer-events-none absolute inset-0">
+            {#each regions as region (region.id)}
+              <button
+                type="button"
+                class="pointer-events-auto absolute border-2 bg-primary/10 {selectedRegionId === region.id
+                  ? 'border-primary'
+                  : 'border-primary/60'}"
+                style="left:{region.x * 100}%;top:{region.y * 100}%;width:{region.w * 100}%;height:{region.h * 100}%;"
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  selectRegion(region.id)
+                }}
+                title={region.label || 'Face box'}
+              >
+                {#if region.label}
+                  <span
+                    class="absolute -top-5 left-0 max-w-[12rem] truncate rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground"
+                  >
+                    {region.label}
+                  </span>
+                {/if}
+              </button>
+            {/each}
+            {#if draftBox}
+              <div
+                class="absolute border-2 border-dashed border-primary bg-primary/20"
+                style="left:{draftBox.x * 100}%;top:{draftBox.y * 100}%;width:{draftBox.w * 100}%;height:{draftBox.h * 100}%;"
+              ></div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <aside class="flex w-full shrink-0 flex-col border-t border-border lg:w-80 lg:border-l lg:border-t-0">
+      <div class="border-b border-border p-3">
+        <p class="text-xs text-muted-foreground">
+          Drag on the photo to box a face. Click a box to comment on it; clear selection for photo comments.
+        </p>
+        {#if selectedRegion}
+          <div class="mt-3 space-y-2">
+            <p class="text-xs font-medium">
+              Box by {selectedRegion.author.displayName}
+            </p>
+            {#if currentUserId === selectedRegion.user_id}
+              <input
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                placeholder="Label (e.g. name)"
+                bind:value={pendingLabel}
+              />
+              <div class="flex gap-2">
+                <Button size="sm" type="button" disabled={busy} onclick={saveLabel}>Save label</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onclick={() => removeRegion(selectedRegion.id)}
+                >
+                  <Trash2Icon />
+                  Delete
+                </Button>
+              </div>
+            {:else}
+              <p class="text-sm">{selectedRegion.label || 'No label'}</p>
+            {/if}
+            <Button size="sm" variant="secondary" type="button" onclick={() => (selectedRegionId = null)}>
+              Clear selection
+            </Button>
+          </div>
+        {/if}
+      </div>
+
+      <div class="flex min-h-0 flex-1 flex-col">
+        <h3 class="px-3 pt-3 text-sm font-semibold">
+          {selectedRegionId ? 'Comments on box' : 'Photo comments'}
+        </h3>
+        <ul class="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          {#each visibleComments as comment (comment.id)}
+            <li class="rounded-md border border-border p-2 text-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <p class="font-medium">{comment.author.displayName}</p>
+                  <p class="text-xs text-muted-foreground">{formatTime(comment.created_at)}</p>
+                </div>
+                {#if currentUserId === comment.user_id}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    disabled={busy}
+                    onclick={() => removeComment(comment.id)}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                {/if}
+              </div>
+              <p class="mt-1 whitespace-pre-wrap">{comment.body}</p>
+            </li>
+          {:else}
+            <li class="text-sm text-muted-foreground">No comments yet.</li>
+          {/each}
+        </ul>
+        <form
+          class="flex gap-2 border-t border-border p-3"
+          onsubmit={(e) => {
+            e.preventDefault()
+            void submitComment()
+          }}
+        >
+          <input
+            class="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-sm"
+            placeholder={selectedRegionId ? 'Comment on this face…' : 'Comment on photo…'}
+            bind:value={commentBody}
+          />
+          <Button size="sm" type="submit" disabled={busy || !commentBody.trim()}>Post</Button>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  {#if showLabelPrompt && draftBox}
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div class="w-full max-w-sm rounded-lg border border-border bg-card p-4 shadow-lg">
+        <h3 class="text-sm font-semibold">Label this face</h3>
+        <p class="mt-1 text-xs text-muted-foreground">Optional — e.g. a name or note.</p>
+        <input
+          class="mt-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+          placeholder="Label"
+          bind:value={pendingLabel}
+        />
+        <div class="mt-3 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" type="button" onclick={cancelRegion}>Cancel</Button>
+          <Button size="sm" type="button" disabled={busy} onclick={confirmRegion}>Save box</Button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if loadError && imageUrl}
+    <p class="border-t border-border px-4 py-2 text-sm text-destructive">{loadError}</p>
+  {/if}
+</div>

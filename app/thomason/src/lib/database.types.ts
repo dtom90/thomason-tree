@@ -30,6 +30,29 @@ export type RelationshipInsert = {
   type: 'parent' | 'spouse'
 }
 
+export type PhotoRegionRow = {
+  id: string
+  drive_file_id: string
+  user_id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  label: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PhotoCommentRow = {
+  id: string
+  drive_file_id: string
+  region_id: string | null
+  user_id: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -61,6 +84,56 @@ export type Database = {
         Row: RelationshipRow
         Insert: RelationshipInsert & { id?: string }
         Update: Partial<RelationshipInsert> & { id?: string }
+        Relationships: []
+      }
+      photo_regions: {
+        Row: PhotoRegionRow
+        Insert: {
+          id?: string
+          drive_file_id: string
+          user_id: string
+          x: number
+          y: number
+          w: number
+          h: number
+          label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          drive_file_id?: string
+          user_id?: string
+          x?: number
+          y?: number
+          w?: number
+          h?: number
+          label?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      photo_comments: {
+        Row: PhotoCommentRow
+        Insert: {
+          id?: string
+          drive_file_id: string
+          region_id?: string | null
+          user_id: string
+          body: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          drive_file_id?: string
+          region_id?: string | null
+          user_id?: string
+          body?: string
+          created_at?: string
+          updated_at?: string
+        }
         Relationships: []
       }
     }
