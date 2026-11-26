@@ -179,7 +179,7 @@
   {/if}
 
   {#if items.length === 0 && !loadError}
-    <p class="text-xs text-muted-foreground">No photos yet. Upload one to get started.</p>
+    <p class="text-xs text-muted-foreground">Upload a photo of {personLabel || 'this person'}</p>
   {:else}
     <div class="grid grid-cols-3 gap-2">
       {#each items as item (item.driveFileId)}
