@@ -57,27 +57,33 @@
 
     const f3Card = f3Chart.setCardHtml().setCardDisplay([
       ['first name', 'last name'],
-      ['birthday'],
     ])
 
     if (centerId && data.some((d) => d.id === centerId)) {
       f3Chart.updateMainId(centerId)
     }
 
-    if (editable) {
-      editTree = f3Chart
-        .editTree()
-        .setFields(['first name', 'last name', 'birthday'])
-        .setEditFirst(true)
-        .setCardClickOpen(f3Card)
-        .setOnChange(() => schedulePersist())
+    const tree = f3Chart
+      .editTree()
+      .setFields([
+        'first name',
+        'last name',
+        { type: 'date', label: 'birthday', id: 'birthday' },
+      ])
+      .setEditFirst(false)
+      .setCardClickOpen(f3Card)
 
-      f3Chart.updateTree({ initial: true })
-      editTree.open(f3Chart.getMainDatum())
-      f3Chart.updateTree({ initial: true })
+    if (editable) {
+      tree.setOnChange(() => schedulePersist())
     } else {
-      f3Chart.updateTree({ initial: true })
+      tree.setNoEdit()
     }
+
+    editTree = tree
+    f3Chart.updateTree({ initial: true })
+    const main = f3Chart.getMainDatum()
+    if (main) editTree.open(main)
+    f3Chart.updateTree({ initial: true })
   }
 
   async function bootstrapTree() {

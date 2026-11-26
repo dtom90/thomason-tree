@@ -23,8 +23,9 @@ declare module 'family-chart' {
     exportData(): Data
     getDataJson(): string
     open(datum: Datum | undefined): EditTree
-    setFields(fields: string[]): EditTree
+    setFields(fields: Array<string | { type: string; label: string; id: string }>): EditTree
     setEditFirst(editFirst: boolean): EditTree
+    setNoEdit(): EditTree
     setCardClickOpen(card: CardHtml): EditTree
     setOnChange(fn: () => void): EditTree
   }

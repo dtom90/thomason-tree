@@ -7,7 +7,6 @@ export function getHtmlNew(form_creator: NewRelFormCreator) {
     <form id="familyForm" class="f3-form">
       ${closeBtn()}
       <h3 class="f3-form-title">${form_creator.title}</h3>
-      ${genderRadio(form_creator)}
 
       <div class="f3-form-fields">
         ${fields(form_creator)}
@@ -30,8 +29,6 @@ export function getHtmlEdit(form_creator: EditDatumFormCreator) {
       <div class="f3-form-header-actions">
         ${form_creator.no_edit ? spaceDiv() : editBtn(form_creator)}
       </div>
-
-      ${genderRadio(form_creator)}
 
       <div class="f3-form-fields">
         ${fields(form_creator)}
@@ -88,20 +85,40 @@ function editBtn(form_creator: EditDatumFormCreator) {
   `)
 }
 
-function genderRadio(form_creator: EditDatumFormCreator | NewRelFormCreator) {
-  if (!form_creator.editable) return ''
+function isNameField(field: { id: string }) {
+  return field.id === 'first name' || field.id === 'last name'
+}
+
+function genderFieldHtml(form_creator: EditDatumFormCreator | NewRelFormCreator) {
+  if (form_creator.editable) {
+    return (`
+      <div class="f3-form-field">
+        <label>${form_creator.gender_field.label}</label>
+        <div class="f3-radio-group">
+          ${form_creator.gender_field.options.map(option => (`
+            <label>
+              <input type="radio" name="${form_creator.gender_field.id}" 
+                value="${option.value}" 
+                ${option.value === form_creator.gender_field.initial_value ? 'checked' : ''}
+                ${form_creator.gender_field.disabled ? 'disabled' : ''}
+              >
+              <span>${option.label}</span>
+            </label>
+          `)).join('')}
+        </div>
+      </div>
+    `)
+  }
+
+  const gender = form_creator.gender_field
+  const gender_label =
+    gender.options.find(option => option.value === gender.initial_value)?.label ||
+    gender.initial_value ||
+    ''
   return (`
-    <div class="f3-radio-group">
-      ${form_creator.gender_field.options.map(option => (`
-        <label>
-          <input type="radio" name="${form_creator.gender_field.id}" 
-            value="${option.value}" 
-            ${option.value === form_creator.gender_field.initial_value ? 'checked' : ''}
-            ${form_creator.gender_field.disabled ? 'disabled' : ''}
-          >
-          <span>${option.label}</span>
-        </label>
-      `)).join('')}
+    <div class="f3-info-field">
+      <span class="f3-info-field-label">${gender.label}</span>
+      <span class="f3-info-field-value">${gender_label}</span>
     </div>
   `)
 }
@@ -109,14 +126,17 @@ function genderRadio(form_creator: EditDatumFormCreator | NewRelFormCreator) {
 function fields(form_creator: EditDatumFormCreator | NewRelFormCreator) {
   if (!form_creator.editable) return infoField()
   let fields_html = ''
-  form_creator.fields.forEach(field => {
-    if (field.type === 'text') {
+  let gender_inserted = false
+  form_creator.fields.forEach((field, index) => {
+    if (field.type === 'text' || field.type === 'date') {
+      const value =
+        field.type === 'date' ? dateInputValue(field.initial_value) : (field.initial_value || '')
       fields_html += `
       <div class="f3-form-field">
         <label>${field.label}</label>
         <input type="${field.type}" 
           name="${field.id}" 
-          value="${field.initial_value || ''}"
+          value="${value}"
           placeholder="${field.label}">
       </div>`
     } else if (field.type === 'textarea') {
@@ -146,12 +166,30 @@ function fields(form_creator: EditDatumFormCreator | NewRelFormCreator) {
           placeholder="${field.label}">
       </div>`
     }
+
+    const next = form_creator.fields[index + 1]
+    if (!gender_inserted && isNameField(field) && (!next || !isNameField(next))) {
+      fields_html += genderFieldHtml(form_creator)
+      gender_inserted = true
+    }
   })
+  if (!gender_inserted) fields_html += genderFieldHtml(form_creator)
   return fields_html
 
   function infoField() {
-    let fields_html = ''
+    const name_parts = form_creator.fields
+      .filter(isNameField)
+      .map(field => String(field.initial_value || '').trim())
+      .filter(Boolean)
+    let fields_html = `
+      <div class="f3-info-field">
+        <span class="f3-info-field-label">Name</span>
+        <span class="f3-info-field-value">${name_parts.join(' ')}</span>
+      </div>`
+    fields_html += genderFieldHtml(form_creator)
+
     form_creator.fields.forEach(field => {
+      if (isNameField(field)) return
       if (field.type === 'rel_reference') {
         if (!field.initial_value) return
         fields_html += `
@@ -168,10 +206,14 @@ function fields(form_creator: EditDatumFormCreator | NewRelFormCreator) {
           <span class="f3-info-field-value">${select_field.options.find(option => option.value === select_field.initial_value)?.label || ''}</span>
         </div>`
       } else {
+        const value =
+          field.type === 'date'
+            ? formatDisplayDate(field.initial_value)
+            : (field.initial_value || '')
         fields_html += `
         <div class="f3-info-field">
           <span class="f3-info-field-label">${field.label}</span>
-          <span class="f3-info-field-value">${field.initial_value || ''}</span>
+          <span class="f3-info-field-value">${value}</span>
         </div>`
       }
     })
@@ -194,6 +236,25 @@ function addLinkExistingRelative(form_creator: EditDatumFormCreator | NewRelForm
   `)
 }
 
+
+function dateInputValue(value: unknown) {
+  const raw = String(value ?? '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  return ''
+}
+
+function formatDisplayDate(value: unknown) {
+  const raw = String(value ?? '').trim()
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return raw
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (Number.isNaN(date.getTime())) return raw
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
 
 function closeBtn() {
   return (`

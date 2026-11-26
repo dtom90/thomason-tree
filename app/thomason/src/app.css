@@ -138,6 +138,7 @@
 }
 
 .f3.chart-root .f3-form input[type='text'],
+.f3.chart-root .f3-form input[type='date'],
 .f3.chart-root .f3-form textarea,
 .f3.chart-root .f3-form select {
   background: var(--background);

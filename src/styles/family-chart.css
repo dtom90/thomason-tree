@@ -137,6 +137,7 @@
 }
 
 .f3-form input[type="text"],
+.f3-form input[type="date"],
 .f3-form textarea,
 .f3-form select {
   width: 100%;
@@ -158,6 +159,7 @@
 }
 
 .f3-form input[type="text"]:focus,
+.f3-form input[type="date"]:focus,
 .f3-form textarea:focus,
 .f3-form select:focus {
   border-color: color-mix(in srgb, var(--f3-form-accent) 70%, var(--f3-form-border));
