@@ -34,7 +34,12 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: yarn build
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set repository secrets VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          yarn build
 
       - name: Add .nojekyll
         run: touch app/thomason/dist/.nojekyll

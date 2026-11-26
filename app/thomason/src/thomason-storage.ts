@@ -88,9 +88,3 @@ export async function saveTree(data: Data): Promise<void> {
     if (insertRelsError) throw insertRelsError
   }
 }
-
-/** Reset to seed via security-definer RPC (preserves user_id/can_edit on matching ids). */
-export async function resetTreeToSeed(): Promise<void> {
-  const { error } = await supabase.rpc('reset_tree_to_seed')
-  if (error) throw error
-}

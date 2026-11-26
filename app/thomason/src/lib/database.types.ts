@@ -143,10 +143,6 @@ export type Database = {
         Args: Record<string, never>
         Returns: boolean
       }
-      reset_tree_to_seed: {
-        Args: Record<string, never>
-        Returns: undefined
-      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
