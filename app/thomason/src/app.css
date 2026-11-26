@@ -194,7 +194,8 @@
 }
 
 .f3.chart-root .f3-unlink-you-btn,
-.f3.chart-root .f3-link-you-btn {
+.f3.chart-root .f3-link-you-btn,
+.f3.chart-root .f3-invite-you-btn {
   flex-shrink: 0;
   margin: 0;
   padding: 4px 10px;
@@ -214,11 +215,13 @@
   background: color-mix(in srgb, var(--destructive) 12%, transparent);
 }
 
-.f3.chart-root .f3-link-you-btn {
+.f3.chart-root .f3-link-you-btn,
+.f3.chart-root .f3-invite-you-btn {
   color: var(--foreground);
 }
 
-.f3.chart-root .f3-link-you-btn:hover {
+.f3.chart-root .f3-link-you-btn:hover,
+.f3.chart-root .f3-invite-you-btn:hover {
   background: var(--f3-form-soft-strong);
 }
 

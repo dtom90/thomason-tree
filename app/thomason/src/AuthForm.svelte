@@ -1,15 +1,25 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { Button } from '$lib/components/ui/button/index.js'
   import { signInWithGoogleDrive } from './google-auth'
+  import { captureInviteFromUrl, inviteUrl, peekPendingInvite } from './invite'
 
   let busy = $state(false)
   let error = $state<string | null>(null)
+  let pendingInvite = $state(false)
+
+  onMount(() => {
+    captureInviteFromUrl()
+    pendingInvite = peekPendingInvite() != null
+  })
 
   async function signInWithGoogle() {
     busy = true
     error = null
     try {
-      await signInWithGoogleDrive()
+      const token = peekPendingInvite()
+      const redirectTo = token ? inviteUrl(token) : window.location.origin
+      await signInWithGoogleDrive(redirectTo)
     } catch (err) {
       error = err instanceof Error ? err.message : 'Google sign-in failed'
       busy = false
@@ -21,7 +31,11 @@
   <div class="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
     <div class="space-y-1">
       <h1 class="text-lg font-semibold tracking-tight">Thomason Family Tree</h1>
-      <p class="text-sm text-muted-foreground">Sign in with Google to view the tree and upload photos.</p>
+      <p class="text-sm text-muted-foreground">
+        {pendingInvite
+          ? 'Sign in with Google to accept your family tree invitation.'
+          : 'Sign in with Google to view the tree and upload photos.'}
+      </p>
     </div>
 
     <Button class="w-full" type="button" variant="outline" disabled={busy} onclick={signInWithGoogle}>

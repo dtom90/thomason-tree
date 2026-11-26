@@ -14,7 +14,22 @@
   import DriveBrowser from './DriveBrowser.svelte'
   import PersonPhotos from './PersonPhotos.svelte'
   import { hydrateChartAvatars, loadAvatarRefs, resolveAvatarUrl } from './avatar'
-  import { loadTree, saveOwnPerson, saveTree, linkMyPerson, unlinkMyPerson } from './thomason-storage'
+  import {
+    createPersonInvite,
+    loadTree,
+    saveOwnPerson,
+    saveTree,
+    linkMyPerson,
+    redeemPersonInvite,
+    sendPersonInviteEmail,
+    unlinkMyPerson,
+  } from './thomason-storage'
+  import {
+    captureInviteFromUrl,
+    clearPendingInvite,
+    inviteUrl,
+    peekPendingInvite,
+  } from './invite'
   import type { LinkedPerson } from './tree-mapper'
   import type { Chart } from 'family-chart'
 
@@ -35,6 +50,17 @@
   let linkOpen = $state(false)
   let linkPersonId = $state<string | null>(null)
   let linking = $state(false)
+  let inviteOpen = $state(false)
+  let invitePersonId = $state<string | null>(null)
+  let invitePersonLabel = $state('')
+  let inviteAsEditor = $state(false)
+  let inviteEmail = $state('')
+  let inviteCreating = $state(false)
+  let inviteLink = $state<string | null>(null)
+  let inviteCopied = $state(false)
+  let inviteEmailedTo = $state<string | null>(null)
+  let inviteError = $state<string | null>(null)
+  let redeemNotice = $state<string | null>(null)
   let personPhotosMount: Record<string, unknown> | null = null
   let avatarBlobUrls: string[] = []
   let avatarDriveByPerson = $state<Map<string, string | null>>(new Map())
@@ -129,7 +155,7 @@
     form: HTMLElement,
     personId: string,
     data: Data,
-    canSetAvatar: boolean,
+    opts: { canUpload: boolean; canSetAvatar: boolean },
   ) {
     unmountPersonPhotos()
     form.querySelector('.f3-person-photos-host')?.remove()
@@ -154,7 +180,8 @@
         personId,
         personLabel,
         avatarDriveFileId: avatarDriveByPerson.get(personId) ?? null,
-        canSetAvatar,
+        canUpload: opts.canUpload,
+        canSetAvatar: opts.canSetAvatar,
         onAvatarChange: handleAvatarChange,
       },
     })
@@ -166,52 +193,79 @@
     opts: {
       isMe: boolean
       canClaim: boolean
+      canInvite: boolean
+      personLabel: string
       editable: boolean
       selfEditOnly: boolean
     },
   ) {
     if (form.querySelector('.f3-you-field')) return
-    if (!opts.isMe && !opts.canClaim) return
 
     const fields = form.querySelector('.f3-form-fields')
     if (!fields) return
 
-    const field = document.createElement('div')
-    field.className = opts.editable ? 'f3-form-field f3-you-field' : 'f3-info-field f3-you-field'
+    if (opts.isMe || opts.canClaim) {
+      const field = document.createElement('div')
+      field.className = opts.editable ? 'f3-form-field f3-you-field' : 'f3-info-field f3-you-field'
 
-    if (opts.isMe && opts.editable) {
-      field.innerHTML = `
-        <label>You</label>
-        <div class="f3-you-field-row">
-          <span class="f3-you-field-copy">Your account is linked to this person</span>
-          <button type="button" class="f3-unlink-you-btn">Unlink</button>
-        </div>
-      `
-      field.querySelector('.f3-unlink-you-btn')?.addEventListener('click', () => {
-        unlinkOpen = true
-      })
-    } else if (opts.isMe) {
-      field.innerHTML = `
-        <span class="f3-info-field-label">You</span>
-        <span class="f3-info-field-value">
-          <span class="card-you-badge f3-form-you-badge">You</span>
-        </span>
-      `
-    } else {
-      field.innerHTML = `
-        <label>You</label>
-        <div class="f3-you-field-row">
-          <span class="f3-you-field-copy">Link this person to your account</span>
-          <button type="button" class="f3-link-you-btn">Link</button>
-        </div>
-      `
-      field.querySelector('.f3-link-you-btn')?.addEventListener('click', () => {
-        linkPersonId = personId
-        linkOpen = true
-      })
+      if (opts.isMe && opts.editable) {
+        field.innerHTML = `
+          <label>You</label>
+          <div class="f3-you-field-row">
+            <span class="f3-you-field-copy">Your account is linked to this person</span>
+            <button type="button" class="f3-unlink-you-btn">Unlink</button>
+          </div>
+        `
+        field.querySelector('.f3-unlink-you-btn')?.addEventListener('click', () => {
+          unlinkOpen = true
+        })
+      } else if (opts.isMe) {
+        field.innerHTML = `
+          <span class="f3-info-field-label">You</span>
+          <span class="f3-info-field-value">
+            <span class="card-you-badge f3-form-you-badge">You</span>
+          </span>
+        `
+      } else {
+        field.innerHTML = `
+          <label>You</label>
+          <div class="f3-you-field-row">
+            <span class="f3-you-field-copy">Link this person to your account</span>
+            <button type="button" class="f3-link-you-btn">Link</button>
+          </div>
+        `
+        field.querySelector('.f3-link-you-btn')?.addEventListener('click', () => {
+          linkPersonId = personId
+          linkOpen = true
+        })
+      }
+
+      fields.appendChild(field)
     }
 
-    fields.appendChild(field)
+    if (opts.canInvite) {
+      const inviteField = document.createElement('div')
+      inviteField.className = 'f3-form-field f3-you-field f3-invite-field'
+      inviteField.innerHTML = `
+        <label>Invite</label>
+        <div class="f3-you-field-row">
+          <span class="f3-you-field-copy">Invite someone to join as this person</span>
+          <button type="button" class="f3-invite-you-btn">Invite</button>
+        </div>
+      `
+      inviteField.querySelector('.f3-invite-you-btn')?.addEventListener('click', () => {
+        invitePersonId = personId
+        invitePersonLabel = opts.personLabel
+        inviteAsEditor = false
+        inviteEmail = ''
+        inviteLink = null
+        inviteCopied = false
+        inviteEmailedTo = null
+        inviteError = null
+        inviteOpen = true
+      })
+      fields.appendChild(inviteField)
+    }
 
     if (opts.selfEditOnly) {
       form.querySelector('.f3-add-relative-btn')?.remove()
@@ -274,15 +328,25 @@
         if (!personId || !data.some((d) => d.id === personId)) return
         const form = cont.querySelector('.f3-form')
         if (!(form instanceof HTMLElement)) return
+        const datum = data.find((d) => d.id === personId)
+        const first = String(datum?.data['first name'] ?? '').trim()
+        const last = String(datum?.data['last name'] ?? '').trim()
+        const personLabel = `${first} ${last}`.trim() || 'this person'
         injectAccountLinkField(form, personId, {
           isMe: centerId === personId,
           canClaim: !centerId && !claimedIds.has(personId),
+          canInvite: treeEditor && !claimedIds.has(personId) && centerId !== personId,
+          personLabel,
           editable: !form.classList.contains('non-editable'),
           selfEditOnly,
         })
-        const canSetAvatar =
+        // Editors: any person. Viewers: only their linked person.
+        const canManageOwnPhotos =
           treeEditor || (selfEditOnly && !!centerId && personId === centerId)
-        injectPersonPhotos(form, personId, data, canSetAvatar)
+        injectPersonPhotos(form, personId, data, {
+          canUpload: canManageOwnPhotos,
+          canSetAvatar: canManageOwnPhotos,
+        })
       })
 
     if (treeEditor) {
@@ -305,10 +369,36 @@
     f3Chart.updateTree({ initial: true })
   }
 
+  async function tryRedeemPendingInvite(): Promise<void> {
+    const token = captureInviteFromUrl() ?? peekPendingInvite()
+    if (!token) return
+
+    try {
+      await redeemPersonInvite(token)
+      clearPendingInvite()
+      redeemNotice = 'Invitation accepted — you are linked to your person on the tree.'
+    } catch (err) {
+      const message =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : String(err)
+      // Already linked: drop stale invite quietly so it does not retry forever.
+      if (/already linked/i.test(message)) {
+        clearPendingInvite()
+        return
+      }
+      console.error('Invite redeem failed', err)
+      redeemNotice = message || 'Could not accept this invitation.'
+      if (!/not authenticated/i.test(message)) clearPendingInvite()
+    }
+  }
+
   async function bootstrapTree() {
     if (!chartEl) return
     const generation = ++loadGeneration
     try {
+      await tryRedeemPendingInvite()
+      if (generation !== loadGeneration) return
       const result = await loadTree()
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
@@ -327,6 +417,63 @@
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
+    }
+  }
+
+  async function confirmCreateInvite() {
+    if (!invitePersonId) return
+    const email = inviteEmail.trim()
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      inviteError = 'Enter a valid email address, or leave it blank for a link only.'
+      return
+    }
+
+    inviteCreating = true
+    inviteError = null
+    inviteCopied = false
+    inviteEmailedTo = null
+    try {
+      const token = await createPersonInvite(invitePersonId, inviteAsEditor, email || null)
+      const link = inviteUrl(token)
+      inviteLink = link
+
+      if (email) {
+        try {
+          await sendPersonInviteEmail({
+            to: email,
+            inviteUrl: link,
+            personLabel: invitePersonLabel || 'a family member',
+            grantCanEdit: inviteAsEditor,
+            inviterName: session?.user.email ?? undefined,
+          })
+          inviteEmailedTo = email
+        } catch (err) {
+          console.error('Send invite email failed', err)
+          const message =
+            err && typeof err === 'object' && 'message' in err
+              ? String((err as { message: unknown }).message)
+              : String(err)
+          inviteError =
+            message ||
+            'Invite link created, but the email could not be sent. Copy the link below.'
+        }
+      }
+    } catch (err) {
+      console.error('Create invite failed', err)
+      inviteError = err instanceof Error ? err.message : 'Could not create invite'
+    } finally {
+      inviteCreating = false
+    }
+  }
+
+  async function copyInviteLink() {
+    if (!inviteLink) return
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      inviteCopied = true
+    } catch (err) {
+      console.error('Copy failed', err)
+      inviteError = 'Could not copy link — select and copy it manually.'
     }
   }
 
@@ -504,4 +651,121 @@
       </AlertDialog.Footer>
     </AlertDialog.Content>
   </AlertDialog.Root>
+
+  <AlertDialog.Root
+    bind:open={inviteOpen}
+    onOpenChange={(open) => {
+      if (!open) {
+        invitePersonId = null
+        invitePersonLabel = ''
+        inviteLink = null
+        inviteCopied = false
+        inviteEmailedTo = null
+        inviteError = null
+        inviteAsEditor = false
+        inviteEmail = ''
+      }
+    }}
+  >
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>Invite to {invitePersonLabel || 'this person'}</AlertDialog.Title>
+        <AlertDialog.Description>
+          Optionally email someone an invite, or create a link they can open, sign in with Google,
+          and join as this person. Links expire in 14 days.
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+
+      {#if inviteLink}
+        <div class="space-y-3">
+          {#if inviteEmailedTo}
+            <p class="text-sm text-foreground">
+              Invitation emailed to <span class="font-medium">{inviteEmailedTo}</span>.
+            </p>
+          {/if}
+          {#if inviteError}
+            <p class="text-sm text-destructive">{inviteError}</p>
+          {/if}
+          <label class="block space-y-1.5 text-sm">
+            <span class="font-medium">Invite link</span>
+            <textarea
+              class="min-h-20 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-xs"
+              readonly
+              value={inviteLink}
+            ></textarea>
+          </label>
+          <p class="text-xs text-muted-foreground">
+            Role: {inviteAsEditor ? 'Editor' : 'Viewer'}
+          </p>
+        </div>
+        <AlertDialog.Footer>
+          <AlertDialog.Cancel>Done</AlertDialog.Cancel>
+          <Button onclick={copyInviteLink}>
+            {inviteCopied ? 'Copied' : 'Copy link'}
+          </Button>
+        </AlertDialog.Footer>
+      {:else}
+        <div class="space-y-4">
+          <label class="block space-y-1.5 text-sm">
+            <span class="font-medium">Email <span class="font-normal text-muted-foreground">(optional)</span></span>
+            <input
+              type="email"
+              class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              placeholder="cousin@example.com"
+              autocomplete="email"
+              bind:value={inviteEmail}
+              disabled={inviteCreating}
+            />
+          </label>
+          <label class="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              class="mt-0.5 size-4 rounded border-border"
+              bind:checked={inviteAsEditor}
+              disabled={inviteCreating}
+            />
+            <span>
+              <span class="font-medium">Editor</span>
+              <span class="block text-muted-foreground">
+                Can edit the whole family tree. Leave unchecked for viewer (own profile only).
+              </span>
+            </span>
+          </label>
+          {#if inviteError}
+            <p class="text-sm text-destructive">{inviteError}</p>
+          {/if}
+        </div>
+        <AlertDialog.Footer>
+          <AlertDialog.Cancel disabled={inviteCreating}>Cancel</AlertDialog.Cancel>
+          <Button disabled={inviteCreating} onclick={confirmCreateInvite}>
+            {inviteCreating
+              ? inviteEmail.trim()
+                ? 'Sending…'
+                : 'Creating…'
+              : inviteEmail.trim()
+                ? 'Send invitation'
+                : 'Create invite link'}
+          </Button>
+        </AlertDialog.Footer>
+      {/if}
+    </AlertDialog.Content>
+  </AlertDialog.Root>
+
+  {#if redeemNotice}
+    <div
+      class="fixed bottom-4 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-3 text-sm shadow-lg"
+      role="status"
+    >
+      <div class="flex items-start gap-3">
+        <p class="flex-1">{redeemNotice}</p>
+        <button
+          type="button"
+          class="shrink-0 text-muted-foreground hover:text-foreground"
+          onclick={() => (redeemNotice = null)}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  {/if}
 {/if}

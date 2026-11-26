@@ -40,6 +40,53 @@ export async function linkMyPerson(personId: string): Promise<void> {
   if (error) throw error
 }
 
+/** Editor-only: create a shareable invite token for an unclaimed person. */
+export async function createPersonInvite(
+  personId: string,
+  grantCanEdit: boolean,
+  email?: string | null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('create_person_invite', {
+    target_person_id: personId,
+    grant_can_edit: grantCanEdit,
+    invite_email: email?.trim() || null,
+  })
+  if (error) throw error
+  if (!data) throw new Error('No invite token returned')
+  return data
+}
+
+/** Email an existing invite link (editors only; requires Resend on the edge function). */
+export async function sendPersonInviteEmail(opts: {
+  to: string
+  inviteUrl: string
+  personLabel: string
+  grantCanEdit: boolean
+  inviterName?: string
+}): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('send-person-invite', {
+    body: {
+      to: opts.to,
+      inviteUrl: opts.inviteUrl,
+      personLabel: opts.personLabel,
+      grantCanEdit: opts.grantCanEdit,
+      inviterName: opts.inviterName,
+    },
+  })
+  const bodyError =
+    data && typeof data === 'object' && 'error' in data && data.error
+      ? String(data.error)
+      : null
+  if (error) throw new Error(bodyError || error.message)
+  if (bodyError) throw new Error(bodyError)
+}
+
+/** Redeem a pending invite for the signed-in user (links person + optional can_edit). */
+export async function redeemPersonInvite(token: string): Promise<void> {
+  const { error } = await supabase.rpc('redeem_person_invite', { invite_token: token })
+  if (error) throw error
+}
+
 export async function loadTree(): Promise<TreeLoadResult> {
   const [peopleRes, relsRes, linkedPerson] = await Promise.all([
     supabase.from('people').select('*'),

@@ -160,6 +160,18 @@ export type Database = {
         Args: { target_person_id: string }
         Returns: undefined
       }
+      create_person_invite: {
+        Args: {
+          target_person_id: string
+          grant_can_edit?: boolean
+          invite_email?: string | null
+        }
+        Returns: string
+      }
+      redeem_person_invite: {
+        Args: { invite_token: string }
+        Returns: undefined
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>

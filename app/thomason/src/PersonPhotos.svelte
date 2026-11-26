@@ -19,6 +19,8 @@
     personId: string
     personLabel?: string
     avatarDriveFileId?: string | null
+    /** Editors: any person. Viewers: only their linked person. */
+    canUpload?: boolean
     canSetAvatar?: boolean
     onAvatarChange?: (
       personId: string,
@@ -30,6 +32,7 @@
     personId,
     personLabel = '',
     avatarDriveFileId = null,
+    canUpload = false,
     canSetAvatar = false,
     onAvatarChange,
   }: Props = $props()
@@ -130,7 +133,7 @@
     const input = e.currentTarget as HTMLInputElement
     const file = input.files?.[0]
     input.value = ''
-    if (!file) return
+    if (!file || !canUpload) return
 
     busy = true
     loadError = null
@@ -194,22 +197,24 @@
 <div class="f3-person-photos space-y-3 border-t border-border pt-3">
   <div class="flex items-center justify-between gap-2">
     <p class="text-sm font-medium">Photos</p>
-    <Button
-      size="sm"
-      type="button"
-      disabled={busy}
-      onclick={() => fileInput?.click()}
-    >
-      <UploadIcon />
-      {busy ? 'Uploading…' : 'Upload'}
-    </Button>
-    <input
-      bind:this={fileInput}
-      type="file"
-      accept="image/*"
-      class="hidden"
-      onchange={onFileChange}
-    />
+    {#if canUpload}
+      <Button
+        size="sm"
+        type="button"
+        disabled={busy}
+        onclick={() => fileInput?.click()}
+      >
+        <UploadIcon />
+        {busy ? 'Uploading…' : 'Upload'}
+      </Button>
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept="image/*"
+        class="hidden"
+        onchange={onFileChange}
+      />
+    {/if}
   </div>
 
   {#if canSetAvatar && items.length > 0}
@@ -247,7 +252,13 @@
   {/if}
 
   {#if items.length === 0 && !loadError}
-    <p class="text-xs text-muted-foreground">Upload a photo of {personLabel || 'this person'}</p>
+    <p class="text-xs text-muted-foreground">
+      {#if canUpload}
+        Upload a photo of {personLabel || 'this person'}
+      {:else}
+        No photos yet
+      {/if}
+    </p>
   {:else}
     <div class="grid grid-cols-3 gap-2">
       {#each items as item (item.driveFileId)}
