@@ -26,10 +26,9 @@
     unlinkMyPerson,
   } from './thomason-storage'
   import {
-    captureInviteFromUrl,
-    clearPendingInvite,
     inviteUrl,
-    peekPendingInvite,
+    restorePendingInvite,
+    takePendingInvite,
   } from './invite'
   import {
     inviteStatusActionLabel,
@@ -583,26 +582,29 @@
   }
 
   async function tryRedeemPendingInvite(): Promise<void> {
-    const token = captureInviteFromUrl() ?? peekPendingInvite()
+    // Consume once so parallel bootstrapTree runs cannot redeem the same token twice.
+    const token = takePendingInvite()
     if (!token) return
 
     try {
       await redeemPersonInvite(token)
-      clearPendingInvite()
       redeemNotice = 'Invitation accepted — you are linked to your person on the tree.'
     } catch (err) {
       const message =
         err && typeof err === 'object' && 'message' in err
           ? String((err as { message: unknown }).message)
           : String(err)
-      // Already linked: drop stale invite quietly so it does not retry forever.
-      if (/already linked/i.test(message)) {
-        clearPendingInvite()
+
+      if (/not authenticated/i.test(message)) {
+        restorePendingInvite(token)
         return
       }
+
+      // Already linked (stale invite) — drop quietly; token already consumed.
+      if (/already linked/i.test(message)) return
+
       console.error('Invite redeem failed', err)
       redeemNotice = message || 'Could not accept this invitation.'
-      if (!/not authenticated/i.test(message)) clearPendingInvite()
     }
   }
 
