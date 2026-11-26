@@ -11,6 +11,8 @@ export type TreeLoadResult = {
   people: PersonRow[]
   /** Latest invite per person (by created_at), when the viewer can read invites. */
   invitesByPersonId: Map<string, PersonInviteRow>
+  /** Linked Google account email per person id (editors only). */
+  linkedEmailsByPersonId: Map<string, string>
 }
 
 export async function getCurrentPerson(): Promise<LinkedPerson | null> {
@@ -130,6 +132,19 @@ export async function loadPersonInvites(): Promise<Map<string, PersonInviteRow>>
   return indexLatestInvites((data ?? []) as PersonInviteRow[])
 }
 
+export async function loadLinkedPersonEmails(): Promise<Map<string, string>> {
+  const { data, error } = await supabase.rpc('list_linked_person_emails')
+  if (error) {
+    if (/not an editor|permission|policy|rls/i.test(error.message)) return new Map()
+    throw error
+  }
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    if (row.person_id && row.email) map.set(row.person_id, row.email)
+  }
+  return map
+}
+
 export async function loadTree(): Promise<TreeLoadResult> {
   const [peopleRes, relsRes, linkedPerson] = await Promise.all([
     supabase.from('people').select('*'),
@@ -146,8 +161,10 @@ export async function loadTree(): Promise<TreeLoadResult> {
     people.filter((p) => p.user_id != null).map((p) => p.id),
   )
 
-  const invitesByPersonId =
-    linkedPerson?.can_edit === true ? await loadPersonInvites() : new Map<string, PersonInviteRow>()
+  const [invitesByPersonId, linkedEmailsByPersonId] =
+    linkedPerson?.can_edit === true
+      ? await Promise.all([loadPersonInvites(), loadLinkedPersonEmails()])
+      : [new Map<string, PersonInviteRow>(), new Map<string, string>()]
 
   return {
     data: toChartData(people, relationships),
@@ -155,6 +172,7 @@ export async function loadTree(): Promise<TreeLoadResult> {
     claimedPersonIds,
     people,
     invitesByPersonId,
+    linkedEmailsByPersonId,
   }
 }
 

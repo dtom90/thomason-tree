@@ -212,6 +212,10 @@ export type Database = {
         Args: Record<string, never>
         Returns: { email: string }[]
       }
+      list_linked_person_emails: {
+        Args: Record<string, never>
+        Returns: { person_id: string; email: string }[]
+      }
       my_person_display_name: {
         Args: Record<string, never>
         Returns: string | null

@@ -16,6 +16,7 @@
   import { hydrateChartAvatars, loadAvatarRefs, resolveAvatarUrl } from './avatar'
   import {
     createPersonInvite,
+    loadLinkedPersonEmails,
     loadPersonInvites,
     loadTree,
     saveOwnPerson,
@@ -58,6 +59,7 @@
   let persistedPersonIds = new Set<string>()
   let claimedPersonIds = $state<Set<string>>(new Set())
   let invitesByPersonId = $state<Map<string, PersonInviteRow>>(new Map())
+  let linkedEmailsByPersonId = $state<Map<string, string>>(new Map())
   let pendingPersonInvites = $state<PendingPersonInvite[]>([])
   let inviteQueued = $state(false)
   let unlinkOpen = $state(false)
@@ -328,6 +330,7 @@
     return resolvePersonInviteStatus({
       personId,
       claimed: claimedPersonIds.has(personId),
+      linkedEmail: linkedEmailsByPersonId.get(personId) ?? null,
       queued: pendingPersonInvites.find((p) => p.personId === personId),
       latestInvite: invitesByPersonId.get(personId),
     })
@@ -419,9 +422,15 @@
   async function refreshInviteStatuses() {
     if (!canEditTree) {
       invitesByPersonId = new Map()
+      linkedEmailsByPersonId = new Map()
       return
     }
-    invitesByPersonId = await loadPersonInvites()
+    const [invites, emails] = await Promise.all([
+      loadPersonInvites(),
+      loadLinkedPersonEmails(),
+    ])
+    invitesByPersonId = invites
+    linkedEmailsByPersonId = emails
   }
 
   /** Keep sidebar status correct even before/without a successful invites refetch. */
@@ -661,6 +670,7 @@
       persistedPersonIds = new Set(result.people.map((p) => p.id))
       claimedPersonIds = result.claimedPersonIds
       invitesByPersonId = result.invitesByPersonId
+      linkedEmailsByPersonId = result.linkedEmailsByPersonId
       pendingPersonInvites = []
       avatarDriveByPerson = new Map(
         result.people.map((p) => [p.id, p.avatar_drive_file_id]),
