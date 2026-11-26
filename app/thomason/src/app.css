@@ -221,3 +221,11 @@
 .f3.chart-root .f3-link-you-btn:hover {
   background: var(--f3-form-soft-strong);
 }
+
+.f3.chart-root .f3-person-photos-host {
+  padding: 0 16px 16px;
+}
+
+.f3.chart-root .f3-person-photos-host .f3-person-photos {
+  margin-top: 4px;
+}

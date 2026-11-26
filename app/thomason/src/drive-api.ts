@@ -1,5 +1,7 @@
 import { supabase } from './lib/supabase'
 import type { PhotoCommentRow, PhotoRegionRow } from './lib/database.types'
+import { getGoogleProviderToken } from './google-auth'
+import { canAccessDriveFolder, pickFamilyRootFolder } from './google-picker'
 
 const functionsBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -126,6 +128,63 @@ export async function listRegions(driveFileId: string): Promise<PhotoRegion[]> {
   return withAuthors(rows, authors)
 }
 
+/**
+ * Ensure drive.file can use the shared family root (one-time Google Picker confirm).
+ * Returns a fresh Google access token to use for upload.
+ */
+export async function ensureFamilyFolderAccess(): Promise<string> {
+  const token = await getGoogleProviderToken()
+  const root = await listDriveFolder()
+  if (await canAccessDriveFolder(token, root.folderId)) return token
+
+  await pickFamilyRootFolder(token, {
+    rootId: root.folderId,
+    rootName: root.name || 'family photos',
+    parentId: root.parents[0] ?? null,
+  })
+
+  if (!(await canAccessDriveFolder(token, root.folderId))) {
+    throw new Error(
+      'Could not access the family folder after selection. Try Reconnect Google Drive, then select the shared folder again.',
+    )
+  }
+  return token
+}
+
+export async function uploadPersonPhoto(file: File): Promise<{
+  id: string
+  name: string
+  mimeType: string
+}> {
+  if (!file.type.startsWith('image/')) throw new Error('File must be an image')
+  const googleToken = await ensureFamilyFolderAccess()
+  const headers = {
+    ...(await authHeaders()),
+    'X-Google-Access-Token': googleToken,
+  }
+  const body = new FormData()
+  body.append('file', file, file.name)
+  const res = await fetch(`${functionsBase}/drive-upload`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+  if (!res.ok) throw new Error(await readError(res))
+  return (await res.json()) as { id: string; name: string; mimeType: string }
+}
+
+export async function listRegionsForPerson(personId: string): Promise<PhotoRegion[]> {
+  const { data, error } = await supabase
+    .from('photo_regions')
+    .select('*')
+    .eq('person_id', personId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const rows = (data ?? []) as PhotoRegionRow[]
+  const authors = await authorMapForUserIds(rows.map((r) => r.user_id))
+  return withAuthors(rows, authors)
+}
+
 export async function createRegion(input: {
   drive_file_id: string
   x: number
@@ -133,6 +192,7 @@ export async function createRegion(input: {
   w: number
   h: number
   label?: string | null
+  person_id?: string | null
 }): Promise<PhotoRegion> {
   const {
     data: { user },
@@ -144,6 +204,7 @@ export async function createRegion(input: {
     .insert({
       drive_file_id: input.drive_file_id,
       user_id: user.id,
+      person_id: input.person_id ?? null,
       x: input.x,
       y: input.y,
       w: input.w,
@@ -156,6 +217,31 @@ export async function createRegion(input: {
   const row = data as PhotoRegionRow
   const authors = await authorMapForUserIds([row.user_id])
   return withAuthors([row], authors)[0]
+}
+
+export async function createRegionsForPersonUpload(input: {
+  drive_file_id: string
+  person_id: string
+  label?: string | null
+  boxes: Array<{ x: number; y: number; w: number; h: number }>
+}): Promise<PhotoRegion[]> {
+  const boxes =
+    input.boxes.length > 0 ? input.boxes : [{ x: 0, y: 0, w: 1, h: 1 }]
+  const created: PhotoRegion[] = []
+  for (const box of boxes) {
+    created.push(
+      await createRegion({
+        drive_file_id: input.drive_file_id,
+        person_id: input.person_id,
+        label: input.label ?? null,
+        x: box.x,
+        y: box.y,
+        w: box.w,
+        h: box.h,
+      }),
+    )
+  }
+  return created
 }
 
 export async function updateRegionLabel(id: string, label: string | null): Promise<PhotoRegion> {

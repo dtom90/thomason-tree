@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button/index.js'
-  import { supabase } from '$lib/supabase'
+  import { signInWithGoogleDrive } from './google-auth'
 
   let busy = $state(false)
   let error = $state<string | null>(null)
@@ -9,13 +9,7 @@
     busy = true
     error = null
     try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      })
-      if (oauthError) throw oauthError
+      await signInWithGoogleDrive()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Google sign-in failed'
       busy = false
@@ -27,7 +21,7 @@
   <div class="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
     <div class="space-y-1">
       <h1 class="text-lg font-semibold tracking-tight">Thomason Family Tree</h1>
-      <p class="text-sm text-muted-foreground">Sign in with Google to view the tree.</p>
+      <p class="text-sm text-muted-foreground">Sign in with Google to view the tree and upload photos.</p>
     </div>
 
     <Button class="w-full" type="button" variant="outline" disabled={busy} onclick={signInWithGoogle}>

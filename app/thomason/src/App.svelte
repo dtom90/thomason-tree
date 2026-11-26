@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { mount, onMount, unmount } from 'svelte'
   import { ModeWatcher } from 'mode-watcher'
   import ImagesIcon from '@lucide/svelte/icons/images'
   import NetworkIcon from '@lucide/svelte/icons/network'
@@ -12,7 +12,8 @@
   import { supabase } from '$lib/supabase'
   import AuthForm from './AuthForm.svelte'
   import DriveBrowser from './DriveBrowser.svelte'
-  import { loadTree, saveTree, linkMyPerson, unlinkMyPerson } from './thomason-storage'
+  import PersonPhotos from './PersonPhotos.svelte'
+  import { loadTree, saveOwnPerson, saveTree, linkMyPerson, unlinkMyPerson } from './thomason-storage'
   import type { LinkedPerson } from './tree-mapper'
 
   type Tab = 'tree' | 'photos'
@@ -30,16 +31,30 @@
   let linkOpen = $state(false)
   let linkPersonId = $state<string | null>(null)
   let linking = $state(false)
+  let personPhotosMount: Record<string, unknown> | null = null
 
-  const canEdit = $derived(linkedPerson?.can_edit === true)
+  const canEditTree = $derived(linkedPerson?.can_edit === true)
+
+  function unmountPersonPhotos() {
+    if (!personPhotosMount) return
+    try {
+      unmount(personPhotosMount)
+    } catch {
+      /* already gone */
+    }
+    personPhotosMount = null
+  }
 
   function schedulePersist() {
-    if (!canEdit) return
+    if (!linkedPerson) return
+    const person = linkedPerson
     clearTimeout(persistTimer)
     persistTimer = setTimeout(async () => {
       if (!editTree) return
       try {
-        await saveTree(editTree.exportData())
+        const data = editTree.exportData()
+        if (person.can_edit) await saveTree(data)
+        else await saveOwnPerson(data, person.id)
       } catch (err) {
         console.error('Save failed', err)
       }
@@ -48,14 +63,44 @@
 
   function destroyChart() {
     clearTimeout(persistTimer)
+    unmountPersonPhotos()
     editTree = undefined
     if (chartEl) chartEl.innerHTML = ''
+  }
+
+  function injectPersonPhotos(form: HTMLElement, personId: string, data: Data) {
+    unmountPersonPhotos()
+    form.querySelector('.f3-person-photos-host')?.remove()
+
+    const host = document.createElement('div')
+    host.className = 'f3-person-photos-host'
+    const fields = form.querySelector('.f3-form-fields')
+    if (fields?.parentElement) {
+      fields.parentElement.insertBefore(host, fields.nextSibling)
+    } else {
+      form.appendChild(host)
+    }
+
+    const datum = data.find((d) => d.id === personId)
+    const first = String(datum?.data['first name'] ?? '').trim()
+    const last = String(datum?.data['last name'] ?? '').trim()
+    const personLabel = `${first} ${last}`.trim()
+
+    personPhotosMount = mount(PersonPhotos, {
+      target: host,
+      props: { personId, personLabel },
+    })
   }
 
   function injectAccountLinkField(
     form: HTMLElement,
     personId: string,
-    opts: { isMe: boolean; canClaim: boolean; editable: boolean },
+    opts: {
+      isMe: boolean
+      canClaim: boolean
+      editable: boolean
+      selfEditOnly: boolean
+    },
   ) {
     if (form.querySelector('.f3-you-field')) return
     if (!opts.isMe && !opts.canClaim) return
@@ -99,16 +144,24 @@
     }
 
     fields.appendChild(field)
+
+    if (opts.selfEditOnly) {
+      form.querySelector('.f3-add-relative-btn')?.remove()
+      form.querySelector('.f3-form-danger')?.remove()
+    }
   }
 
   function initChart(
     data: Data,
-    centerId: string | null,
-    editable: boolean,
+    linked: LinkedPerson | null,
     claimedIds: Set<string>,
   ) {
     if (!chartEl) return
     destroyChart()
+
+    const centerId = linked?.id ?? null
+    const treeEditor = linked?.can_edit === true
+    const selfEditOnly = linked != null && !treeEditor
 
     const f3Chart = f3
       .createChart(chartEl, data)
@@ -150,16 +203,24 @@
         const personId = form_creator.datum_id
         if (!personId || !data.some((d) => d.id === personId)) return
         const form = cont.querySelector('.f3-form')
-        if (!form) return
+        if (!(form instanceof HTMLElement)) return
         injectAccountLinkField(form, personId, {
           isMe: centerId === personId,
           canClaim: !centerId && !claimedIds.has(personId),
           editable: !form.classList.contains('non-editable'),
+          selfEditOnly,
         })
+        injectPersonPhotos(form, personId, data)
       })
 
-    if (editable) {
+    if (treeEditor) {
       tree.setOnChange(() => schedulePersist())
+    } else if (selfEditOnly && centerId) {
+      tree
+        .setCanEdit((datum) => datum.id === centerId)
+        .setCanDelete(() => false)
+        .setCanAdd(() => ({ parent: false, spouse: false, child: false }))
+        .setOnChange(() => schedulePersist())
     } else {
       tree.setNoEdit()
     }
@@ -178,12 +239,7 @@
       const result = await loadTree()
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
-      initChart(
-        result.data,
-        result.linkedPerson?.id ?? null,
-        result.linkedPerson?.can_edit === true,
-        result.claimedPersonIds,
-      )
+      initChart(result.data, result.linkedPerson, result.claimedPersonIds)
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
@@ -312,7 +368,7 @@
       </nav>
       <div class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         <ThemeToggle />
-        <AccountMenu email={session.user.email ?? ''} {canEdit} onSignOut={signOut} />
+        <AccountMenu email={session.user.email ?? ''} canEdit={canEditTree} onSignOut={signOut} />
       </div>
     </header>
 

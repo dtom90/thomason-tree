@@ -1,10 +1,12 @@
 <script lang="ts">
   import CircleUserIcon from '@lucide/svelte/icons/circle-user'
+  import HardDriveIcon from '@lucide/svelte/icons/hard-drive'
   import LogOutIcon from '@lucide/svelte/icons/log-out'
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
   import { Badge } from '$lib/components/ui/badge/index.js'
   import { buttonVariants } from '$lib/components/ui/button/index.js'
   import { cn } from '$lib/utils.js'
+  import { signInWithGoogleDrive } from '../../google-auth'
 
   let {
     email,
@@ -15,6 +17,18 @@
     canEdit: boolean
     onSignOut: () => void
   } = $props()
+
+  let reconnectBusy = $state(false)
+
+  async function reconnectDrive() {
+    reconnectBusy = true
+    try {
+      await signInWithGoogleDrive()
+    } catch (err) {
+      console.error('Drive reconnect failed', err)
+      reconnectBusy = false
+    }
+  }
 </script>
 
 <DropdownMenu.Root>
@@ -34,6 +48,10 @@
       </Badge>
     </DropdownMenu.Label>
     <DropdownMenu.Separator />
+    <DropdownMenu.Item disabled={reconnectBusy} onclick={reconnectDrive}>
+      <HardDriveIcon class="size-4" />
+      {reconnectBusy ? 'Redirecting…' : 'Reconnect Drive (photos)'}
+    </DropdownMenu.Item>
     <DropdownMenu.Item onclick={onSignOut}>
       <LogOutIcon class="size-4" />
       Sign out

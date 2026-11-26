@@ -34,6 +34,7 @@ export type PhotoRegionRow = {
   id: string
   drive_file_id: string
   user_id: string
+  person_id: string | null
   x: number
   y: number
   w: number
@@ -92,6 +93,7 @@ export type Database = {
           id?: string
           drive_file_id: string
           user_id: string
+          person_id?: string | null
           x: number
           y: number
           w: number
@@ -104,6 +106,7 @@ export type Database = {
           id?: string
           drive_file_id?: string
           user_id?: string
+          person_id?: string | null
           x?: number
           y?: number
           w?: number

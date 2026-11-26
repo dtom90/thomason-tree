@@ -62,6 +62,26 @@ export async function loadTree(): Promise<TreeLoadResult> {
   }
 }
 
+/** Updates only the signed-in user's linked person profile fields. */
+export async function saveOwnPerson(data: Data, personId: string): Promise<void> {
+  const { people } = fromChartData(data)
+  const person = people.find((p) => p.id === personId)
+  if (!person) return
+
+  const { error } = await supabase
+    .from('people')
+    .update({
+      first_name: person.first_name,
+      last_name: person.last_name,
+      birthday: person.birthday,
+      gender: person.gender,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', personId)
+
+  if (error) throw error
+}
+
 export async function saveTree(data: Data): Promise<void> {
   const { people: chartPeople, relationships } = fromChartData(data)
 

@@ -27,6 +27,11 @@ declare module 'family-chart' {
     setFields(fields: Array<string | { type: string; label: string; id: string }>): EditTree
     setEditFirst(editFirst: boolean): EditTree
     setNoEdit(): EditTree
+    setCanEdit(fn: (datum: Datum) => boolean): EditTree
+    setCanDelete(fn: (datum: Datum) => boolean): EditTree
+    setCanAdd(
+      fn: (datum: Datum) => { parent?: boolean; spouse?: boolean; child?: boolean },
+    ): EditTree
     setCardClickOpen(card: CardHtml): EditTree
     setOnChange(fn: () => void): EditTree
     setOnFormCreation(
