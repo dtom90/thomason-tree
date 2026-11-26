@@ -30,22 +30,41 @@ type GalleryPayload = {
   mode: 'gallery'
 }
 
-/** Best-effort per-isolate cache; survives warm invokes, cleared on cold start. */
 const GALLERY_TTL_MS = 3 * 60 * 1000
-const galleryCache = new Map<string, { expiresAt: number; payload: GalleryPayload }>()
 
-function getCachedGallery(rootId: string): GalleryPayload | null {
-  const hit = galleryCache.get(rootId)
-  if (!hit) return null
-  if (Date.now() >= hit.expiresAt) {
-    galleryCache.delete(rootId)
-    return null
-  }
-  return hit.payload
+function adminClient() {
+  const url = Deno.env.get('SUPABASE_URL') ?? ''
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  if (!url || !key) throw new Error('Missing Supabase service role env')
+  return createClient(url, key)
 }
 
-function setCachedGallery(rootId: string, payload: GalleryPayload): void {
-  galleryCache.set(rootId, { expiresAt: Date.now() + GALLERY_TTL_MS, payload })
+async function readGalleryCache(rootId: string): Promise<GalleryPayload | null> {
+  const { data, error } = await adminClient()
+    .from('drive_gallery_cache')
+    .select('payload, refreshed_at')
+    .eq('root_id', rootId)
+    .maybeSingle()
+  if (error) {
+    console.error('gallery cache read failed', error)
+    return null
+  }
+  if (!data?.payload || !data.refreshed_at) return null
+  const age = Date.now() - new Date(data.refreshed_at).getTime()
+  if (Number.isNaN(age) || age >= GALLERY_TTL_MS) return null
+  return data.payload as GalleryPayload
+}
+
+async function writeGalleryCache(rootId: string, payload: GalleryPayload): Promise<void> {
+  const { error } = await adminClient().from('drive_gallery_cache').upsert(
+    {
+      root_id: rootId,
+      payload,
+      refreshed_at: new Date().toISOString(),
+    },
+    { onConflict: 'root_id' },
+  )
+  if (error) console.error('gallery cache write failed', error)
 }
 
 Deno.serve(async (req) => {
@@ -78,7 +97,7 @@ Deno.serve(async (req) => {
     const folderId = mode === 'gallery' ? rootId : (url.searchParams.get('folderId') || rootId)
 
     if (mode === 'gallery' && !refresh) {
-      const cached = getCachedGallery(rootId)
+      const cached = await readGalleryCache(rootId)
       if (cached) {
         return jsonResponse({ ...cached, cached: true })
       }
@@ -156,7 +175,7 @@ Deno.serve(async (req) => {
         items,
         mode: 'gallery',
       }
-      setCachedGallery(rootId, payload)
+      await writeGalleryCache(rootId, payload)
       return jsonResponse({ ...payload, cached: false })
     }
 

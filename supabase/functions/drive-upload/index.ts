@@ -11,6 +11,15 @@ import {
   jsonResponse,
 } from '../_shared/google-drive.ts'
 
+async function invalidateGalleryCache(rootId: string): Promise<void> {
+  const url = Deno.env.get('SUPABASE_URL') ?? ''
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  if (!url || !key) return
+  const admin = createClient(url, key)
+  const { error } = await admin.from('drive_gallery_cache').delete().eq('root_id', rootId)
+  if (error) console.error('gallery cache invalidate failed', error)
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -132,6 +141,7 @@ Deno.serve(async (req) => {
       name: string
       mimeType: string
     }
+    await invalidateGalleryCache(rootId)
     return jsonResponse({
       id: uploaded.id,
       name: uploaded.name,
