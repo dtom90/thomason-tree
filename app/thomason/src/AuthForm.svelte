@@ -26,7 +26,7 @@
 <div class="flex min-h-[calc(100dvh-0px)] items-center justify-center bg-background px-4">
   <div class="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
     <div class="space-y-1">
-      <h1 class="text-lg font-semibold tracking-tight">Thomason family tree</h1>
+      <h1 class="text-lg font-semibold tracking-tight">Thomason Family Tree</h1>
       <p class="text-sm text-muted-foreground">Sign in with Google to view the tree.</p>
     </div>
 

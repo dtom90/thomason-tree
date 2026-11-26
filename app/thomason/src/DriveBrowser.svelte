@@ -1,10 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import XIcon from '@lucide/svelte/icons/x'
   import FolderIcon from '@lucide/svelte/icons/folder'
   import ImageIcon from '@lucide/svelte/icons/image'
   import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
-  import { Button } from '$lib/components/ui/button/index.js'
   import {
     fetchDriveImageUrl,
     listDriveFolder,
@@ -12,12 +10,6 @@
     type DriveListResult,
   } from './drive-api'
   import PhotoViewer from './PhotoViewer.svelte'
-
-  type Props = {
-    onClose: () => void
-  }
-
-  let { onClose }: Props = $props()
 
   type Crumb = { id: string; name: string }
 
@@ -90,11 +82,10 @@
   })
 </script>
 
-<div class="fixed inset-0 z-40 flex flex-col bg-background">
-  <header class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
-    <h2 class="text-base font-semibold">Photos</h2>
+<div class="flex h-full flex-col bg-background">
+  <div class="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
     <div class="min-w-0 flex-1 overflow-x-auto">
-      <nav class="flex items-center gap-1 text-sm text-muted-foreground">
+      <nav class="flex items-center gap-1 text-sm text-muted-foreground" aria-label="Folder path">
         {#each crumbs as crumb, i (crumb.id)}
           {#if i > 0}
             <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
@@ -111,11 +102,7 @@
         {/each}
       </nav>
     </div>
-    <Button variant="ghost" size="sm" type="button" onclick={onClose}>
-      <XIcon />
-      Close
-    </Button>
-  </header>
+  </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto p-4">
     {#if loading}

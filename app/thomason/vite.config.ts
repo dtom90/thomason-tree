@@ -10,6 +10,11 @@ export default defineConfig({
   plugins: [tailwindcss(), svelte()],
   server: {
     port: 5173,
+    watch: {
+      // Cursor/agent sandboxes often break FSEvents; polling keeps HMR reliable.
+      usePolling: true,
+      interval: 200,
+    },
   },
   build: {
     outDir: resolve(root, 'dist'),

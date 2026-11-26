@@ -4,6 +4,7 @@
   import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw'
   import LogOutIcon from '@lucide/svelte/icons/log-out'
   import ImagesIcon from '@lucide/svelte/icons/images'
+  import NetworkIcon from '@lucide/svelte/icons/network'
   import f3, { type Data, type EditTree } from 'family-chart'
   import type { Session } from '@supabase/supabase-js'
   import ThemeToggle from '$lib/components/ThemeToggle.svelte'
@@ -16,12 +17,14 @@
   import { loadTree, resetTreeToSeed, saveTree } from './thomason-storage'
   import type { LinkedPerson } from './tree-mapper'
 
+  type Tab = 'tree' | 'photos'
+
   let chartEl: HTMLDivElement | undefined = $state()
   let session = $state<Session | null>(null)
   let authReady = $state(false)
   let status = $state('Loading…')
   let resetOpen = $state(false)
-  let photosOpen = $state(false)
+  let activeTab = $state<Tab>('tree')
   let linkedPerson = $state<LinkedPerson | null>(null)
   let editTree: EditTree | undefined
   let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -71,7 +74,7 @@
     if (editable) {
       editTree = f3Chart
         .editTree()
-        .setFields(['first name', 'last name', 'birthday', 'gender'])
+        .setFields(['first name', 'last name', 'birthday'])
         .setEditFirst(true)
         .setCardClickOpen(f3Card)
         .setOnChange(() => schedulePersist())
@@ -176,58 +179,91 @@
 {:else if !session}
   <AuthForm />
 {:else}
-  <header
-    class="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80"
-  >
-    <h1 class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight">
-      Thomason family tree
-    </h1>
-    <Badge variant="secondary" class="hidden font-normal sm:inline-flex">
-      {canEdit ? 'Editor' : 'Viewer'}
-    </Badge>
-    <span class="hidden max-w-[14rem] truncate text-sm text-muted-foreground md:inline" title={status}>
-      {status}
-    </span>
-    <span class="hidden max-w-[12rem] truncate text-sm text-muted-foreground lg:inline">
-      {session.user.email}
-    </span>
-    <div class="ml-1 flex items-center gap-1.5">
-      <ThemeToggle />
-      <Button variant="ghost" size="sm" type="button" onclick={() => (photosOpen = true)}>
-        <ImagesIcon />
-        Photos
-      </Button>
-      {#if canEdit}
-        <Button variant="ghost" size="sm" type="button" onclick={() => (resetOpen = true)}>
-          <RotateCcwIcon />
-          Reset
+  <div class="flex h-dvh flex-col">
+    <header
+      class="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+    >
+      <h1 class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight">
+        Thomason Family Tree
+      </h1>
+      <Badge variant="secondary" class="hidden font-normal sm:inline-flex">
+        {canEdit ? 'Editor' : 'Viewer'}
+      </Badge>
+      <span class="hidden max-w-[14rem] truncate text-sm text-muted-foreground md:inline" title={status}>
+        {status}
+      </span>
+      <span class="hidden max-w-[12rem] truncate text-sm text-muted-foreground lg:inline">
+        {session.user.email}
+      </span>
+      <div class="ml-1 flex items-center gap-1.5">
+        <ThemeToggle />
+        {#if canEdit}
+          <Button variant="ghost" size="sm" type="button" onclick={() => (resetOpen = true)}>
+            <RotateCcwIcon />
+            Reset
+          </Button>
+        {/if}
+        <Button variant="ghost" size="sm" type="button" onclick={signOut}>
+          <LogOutIcon />
+          Sign out
         </Button>
+      </div>
+      <AlertDialog.Root bind:open={resetOpen}>
+        <AlertDialog.Content>
+          <AlertDialog.Header>
+            <AlertDialog.Title>Reset tree data?</AlertDialog.Title>
+            <AlertDialog.Description>
+              This replaces the shared tree with the seed data. Account links on matching person ids
+              are kept.
+            </AlertDialog.Description>
+          </AlertDialog.Header>
+          <AlertDialog.Footer>
+            <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+            <AlertDialog.Action onclick={confirmReset}>Reset</AlertDialog.Action>
+          </AlertDialog.Footer>
+        </AlertDialog.Content>
+      </AlertDialog.Root>
+    </header>
+
+    <nav
+      class="flex shrink-0 gap-1 border-b border-border bg-card/60 px-3 pt-1"
+      aria-label="Main"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTab === 'tree'}
+        class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab ===
+        'tree'
+          ? 'border-foreground text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        onclick={() => (activeTab = 'tree')}
+      >
+        <NetworkIcon class="size-3.5" />
+        Family tree
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTab === 'photos'}
+        class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab ===
+        'photos'
+          ? 'border-foreground text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground'}"
+        onclick={() => (activeTab = 'photos')}
+      >
+        <ImagesIcon class="size-3.5" />
+        Photos
+      </button>
+    </nav>
+
+    <main class="relative min-h-0 flex-1">
+      <div class="absolute inset-0 {activeTab === 'tree' ? '' : 'invisible pointer-events-none'}">
+        <div class="f3 chart-root" bind:this={chartEl}></div>
+      </div>
+      {#if activeTab === 'photos'}
+        <DriveBrowser />
       {/if}
-      <Button variant="ghost" size="sm" type="button" onclick={signOut}>
-        <LogOutIcon />
-        Sign out
-      </Button>
-    </div>
-    <AlertDialog.Root bind:open={resetOpen}>
-      <AlertDialog.Content>
-        <AlertDialog.Header>
-          <AlertDialog.Title>Reset tree data?</AlertDialog.Title>
-          <AlertDialog.Description>
-            This replaces the shared tree with the seed data. Account links on matching person ids
-            are kept.
-          </AlertDialog.Description>
-        </AlertDialog.Header>
-        <AlertDialog.Footer>
-          <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-          <AlertDialog.Action onclick={confirmReset}>Reset</AlertDialog.Action>
-        </AlertDialog.Footer>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
-  </header>
-
-  <div class="f3 chart-root" bind:this={chartEl}></div>
-
-  {#if photosOpen}
-    <DriveBrowser onClose={() => (photosOpen = false)} />
-  {/if}
+    </main>
+  </div>
 {/if}
