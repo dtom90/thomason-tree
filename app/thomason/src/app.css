@@ -232,3 +232,48 @@
 .f3.chart-root .f3-person-photos-host .f3-person-photos {
   margin-top: 4px;
 }
+
+/* Photo tiles live inside .f3-form; reset form button chrome so selection can show. */
+.f3.chart-root .f3-person-photos .f3-person-photo-tile {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--muted);
+  box-shadow: none;
+  color: inherit;
+  line-height: 0;
+}
+
+.f3.chart-root .f3-person-photos .f3-person-photo-tile.is-avatar {
+  border-color: var(--f3-form-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--f3-form-accent) 28%, transparent);
+}
+
+.f3.chart-root .f3-person-photos .f3-person-photo-tile:focus-visible {
+  border-color: var(--f3-form-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--f3-form-accent) 22%, transparent);
+}
+
+.f3.chart-root .f3-person-photos .f3-person-photo-avatar-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 8px);
+  height: 20px;
+  padding: 0 6px 0 4px;
+  border-radius: 9999px;
+  background: var(--f3-form-accent);
+  color: #fff;
+  pointer-events: none;
+}
+
+.f3.chart-root .f3-person-photos .f3-person-photo-avatar-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}

@@ -13,7 +13,8 @@
     type PhotoRegion,
   } from './drive-api'
   import { signInWithGoogleDrive } from './google-auth'
-  import { setPersonAvatar } from './thomason-storage'
+
+  type AvatarRef = { driveFileId: string; regionId: string | null }
 
   type Props = {
     personId: string
@@ -24,10 +25,8 @@
     /** Editors: any person. Viewers: only their linked person. */
     canUpload?: boolean
     canSetAvatar?: boolean
-    onAvatarChange?: (
-      personId: string,
-      avatar: { driveFileId: string; regionId: string | null } | null,
-    ) => void
+    /** Called on form Save when the profile photo draft changed. */
+    onAvatarChange?: (personId: string, avatar: AvatarRef | null) => void
   }
 
   let {
@@ -51,15 +50,17 @@
   }
 
   let items = $state<GalleryItem[]>([])
-  let selectedAvatarFileId = $state<string | null>(avatarDriveFileId)
+  /** undefined = unchanged from saved; null = clear; otherwise pending selection. */
+  let draftAvatar = $state<AvatarRef | null | undefined>(undefined)
+  const selectedAvatarFileId = $derived(
+    draftAvatar !== undefined ? (draftAvatar?.driveFileId ?? null) : (avatarDriveFileId ?? null),
+  )
   let loadError = $state<string | null>(null)
   let busy = $state(false)
+  let rootEl: HTMLDivElement | undefined = $state()
   let fileInput: HTMLInputElement | undefined = $state()
   const thumbUrls = new Set<string>()
-
-  $effect(() => {
-    selectedAvatarFileId = avatarDriveFileId
-  })
+  let boundForm: HTMLFormElement | null = null
 
   function revokeThumbs() {
     for (const url of thumbUrls) URL.revokeObjectURL(url)
@@ -160,47 +161,44 @@
     }
   }
 
-  async function chooseAvatar(item: GalleryItem) {
+  function chooseAvatar(item: GalleryItem) {
     if (!showSetAvatar || busy) return
-    busy = true
-    loadError = null
-    try {
-      const avatar = { driveFileId: item.driveFileId, regionId: item.regionId }
-      await setPersonAvatar(personId, avatar)
-      selectedAvatarFileId = item.driveFileId
-      onAvatarChange?.(personId, avatar)
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : 'Failed to set profile photo'
-    } finally {
-      busy = false
+    // Selecting the already-saved photo clears any draft change.
+    if (item.driveFileId === (avatarDriveFileId ?? null)) {
+      draftAvatar = undefined
+      return
     }
+    draftAvatar = { driveFileId: item.driveFileId, regionId: item.regionId }
   }
 
-  async function clearAvatar() {
+  function clearAvatar() {
     if (!showSetAvatar || busy || !selectedAvatarFileId) return
-    busy = true
-    loadError = null
-    try {
-      await setPersonAvatar(personId, null)
-      selectedAvatarFileId = null
-      onAvatarChange?.(personId, null)
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : 'Failed to clear profile photo'
-    } finally {
-      busy = false
-    }
+    draftAvatar = avatarDriveFileId ? null : undefined
+  }
+
+  function onFormSubmit() {
+    if (!showSetAvatar || draftAvatar === undefined) return
+    onAvatarChange?.(personId, draftAvatar)
   }
 
   onMount(() => {
     void loadGallery()
+    const form = rootEl?.closest('form')
+    if (form instanceof HTMLFormElement) {
+      boundForm = form
+      // Capture so the draft commits before family-chart's submit reopens the form.
+      form.addEventListener('submit', onFormSubmit, true)
+    }
   })
 
   onDestroy(() => {
+    boundForm?.removeEventListener('submit', onFormSubmit, true)
+    boundForm = null
     revokeThumbs()
   })
 </script>
 
-<div class="f3-person-photos space-y-3 border-t border-border pt-3">
+<div class="f3-person-photos space-y-3 border-t border-border pt-3" bind:this={rootEl}>
   <div class="flex items-center justify-between gap-2">
     <p class="text-sm font-medium">Photos</p>
     {#if showUpload}
@@ -223,9 +221,13 @@
     {/if}
   </div>
 
-  {#if showSetAvatar && items.length > 0}
+  {#if items.length > 0 && selectedAvatarFileId && !showSetAvatar}
     <p class="text-xs text-muted-foreground">
-      Click a photo to use it as the profile picture on the tree.
+      The highlighted photo is the profile picture on the tree.
+    </p>
+  {:else if showSetAvatar && items.length > 0}
+    <p class="text-xs text-muted-foreground">
+      Click a photo to use it as the profile picture, then Save.
       {#if selectedAvatarFileId}
         <button
           type="button"
@@ -270,10 +272,10 @@
       {/if}
     </p>
   {:else}
-    <div class="grid grid-cols-3 gap-2">
+    <div class="f3-person-photo-grid grid grid-cols-3 gap-2">
       {#each items as item (item.driveFileId)}
         {@const isAvatar = selectedAvatarFileId === item.driveFileId}
-        {@const tileClass = `relative aspect-square overflow-hidden rounded-md bg-muted ${isAvatar ? 'ring-2 ring-primary' : ''}`}
+        {@const tileClass = `f3-person-photo-tile relative aspect-square overflow-hidden rounded-md bg-muted${isAvatar ? ' is-avatar' : ''}`}
         {#snippet tileBody()}
           {#if item.thumbUrl}
             <img src={item.thumbUrl} alt="" class="h-full w-full object-cover" />
@@ -283,10 +285,9 @@
             </div>
           {/if}
           {#if isAvatar}
-            <span
-              class="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
-            >
-              <CheckIcon class="size-3" />
+            <span class="f3-person-photo-avatar-badge">
+              <CheckIcon class="size-3" aria-hidden="true" />
+              <span class="f3-person-photo-avatar-label">Profile</span>
             </span>
           {/if}
           {#if item.regionCount > 1}
@@ -300,15 +301,20 @@
         {#if showSetAvatar}
           <button
             type="button"
-            class="{tileClass} text-left ring-offset-background transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="{tileClass} text-left transition focus-visible:outline-none"
             disabled={busy}
+            aria-pressed={isAvatar}
             onclick={() => chooseAvatar(item)}
             title={isAvatar ? 'Current profile photo' : 'Use as profile photo'}
           >
             {@render tileBody()}
           </button>
         {:else}
-          <div class={tileClass} title={isAvatar ? 'Profile photo' : undefined}>
+          <div
+            class={tileClass}
+            title={isAvatar ? 'Profile photo' : undefined}
+            aria-current={isAvatar ? 'true' : undefined}
+          >
             {@render tileBody()}
           </div>
         {/if}

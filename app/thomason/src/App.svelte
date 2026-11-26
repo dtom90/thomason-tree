@@ -21,6 +21,7 @@
     loadTree,
     saveOwnPerson,
     saveTree,
+    setPersonAvatar,
     linkMyPerson,
     redeemPersonInvite,
     sendPersonInviteEmail,
@@ -105,6 +106,9 @@
     avatarBlobUrls = []
   }
 
+  /** Avatar writes queued on form Save; flushed before tree persist. */
+  let avatarFlush: Promise<void> = Promise.resolve()
+
   function schedulePersist() {
     if (!linkedPerson) return
     const person = linkedPerson
@@ -119,6 +123,7 @@
   async function flushTreePersist(person = linkedPerson): Promise<void> {
     if (!person || !editTree) return
     clearTimeout(persistTimer)
+    await avatarFlush
     const data = editTree.exportData()
     if (person.can_edit) {
       await saveTree(data)
@@ -247,46 +252,52 @@
     if (chartEl) chartEl.innerHTML = ''
   }
 
-  async function handleAvatarChange(
+  function handleAvatarChange(
     personId: string,
     avatar: { driveFileId: string; regionId: string | null } | null,
   ) {
+    // Optimistic so the reopened form (same Save turn) sees the new selection.
     const nextMap = new Map(avatarDriveByPerson)
     nextMap.set(personId, avatar?.driveFileId ?? null)
     avatarDriveByPerson = nextMap
 
-    const datum = chartData.find((d) => d.id === personId)
-    if (!datum || !chart) return
+    // Persist + refresh tree card before debounced saveTree.
+    avatarFlush = (async () => {
+      await setPersonAvatar(personId, avatar)
 
-    const previous = typeof datum.data.avatar === 'string' ? datum.data.avatar : null
-    if (previous && avatarBlobUrls.includes(previous)) {
-      URL.revokeObjectURL(previous)
-      avatarBlobUrls = avatarBlobUrls.filter((u) => u !== previous)
-    }
+      const datum = chartData.find((d) => d.id === personId)
+      if (!datum || !chart) return
 
-    if (!avatar) {
-      delete datum.data.avatar
-      chart.updateTree({})
-      return
-    }
+      const previous = typeof datum.data.avatar === 'string' ? datum.data.avatar : null
+      if (previous && avatarBlobUrls.includes(previous)) {
+        URL.revokeObjectURL(previous)
+        avatarBlobUrls = avatarBlobUrls.filter((u) => u !== previous)
+      }
 
-    try {
-      const refs = await loadAvatarRefs([
-        {
-          id: personId,
-          avatar_drive_file_id: avatar.driveFileId,
-          avatar_region_id: avatar.regionId,
-        },
-      ])
-      const ref = refs.get(personId)
-      if (!ref) return
-      const url = await resolveAvatarUrl(ref)
-      avatarBlobUrls.push(url)
-      datum.data.avatar = url
-      chart.updateTree({})
-    } catch (err) {
-      console.error('Failed to refresh avatar', err)
-    }
+      if (!avatar) {
+        delete datum.data.avatar
+        chart.updateTree({})
+        return
+      }
+
+      try {
+        const refs = await loadAvatarRefs([
+          {
+            id: personId,
+            avatar_drive_file_id: avatar.driveFileId,
+            avatar_region_id: avatar.regionId,
+          },
+        ])
+        const ref = refs.get(personId)
+        if (!ref) return
+        const url = await resolveAvatarUrl(ref)
+        avatarBlobUrls.push(url)
+        datum.data.avatar = url
+        chart.updateTree({})
+      } catch (err) {
+        console.error('Failed to refresh avatar', err)
+      }
+    })()
   }
 
   function injectPersonPhotos(
@@ -672,7 +683,8 @@
       invitesByPersonId = result.invitesByPersonId
       linkedEmailsByPersonId = result.linkedEmailsByPersonId
       pendingPersonInvites = []
-      avatarDriveByPerson = new Map(
+      // Build before initChart — destroyChart() clears avatarDriveByPerson.
+      const nextAvatarDriveByPerson = new Map(
         result.people.map((p) => [p.id, p.avatar_drive_file_id]),
       )
       revokeAvatarBlobs()
@@ -684,6 +696,7 @@
         return
       }
       initChart(result.data, result.linkedPerson)
+      avatarDriveByPerson = nextAvatarDriveByPerson
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
