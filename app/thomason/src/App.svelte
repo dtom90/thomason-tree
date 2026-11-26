@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { mount, onMount, unmount } from 'svelte'
+  import { mount, onMount, unmount, untrack } from 'svelte'
   import { ModeWatcher } from 'mode-watcher'
   import ImagesIcon from '@lucide/svelte/icons/images'
   import NetworkIcon from '@lucide/svelte/icons/network'
@@ -7,6 +7,8 @@
   import type { Session } from '@supabase/supabase-js'
   import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
   import { Button } from '$lib/components/ui/button/index.js'
+  import * as ToggleGroup from '$lib/components/ui/toggle-group/index.js'
+  import * as Tooltip from '$lib/components/ui/tooltip/index.js'
   import AccountMenu from '$lib/components/AccountMenu.svelte'
   import ThemeToggle from '$lib/components/ThemeToggle.svelte'
   import { supabase } from '$lib/supabase'
@@ -47,6 +49,12 @@
   type Tab = 'tree' | 'photos'
 
   let chartEl: HTMLDivElement | undefined = $state()
+  let headerEl: HTMLElement | undefined = $state()
+  let titleEl: HTMLElement | undefined = $state()
+  let actionsEl: HTMLElement | undefined = $state()
+  let navEl: HTMLElement | undefined = $state()
+  /** Tabs share the first navbar row until they would collide with title/actions. */
+  let tabsInline = $state(true)
   let session = $state<Session | null>(null)
   let authReady = $state(false)
   let activeTab = $state<Tab>(getPhotosViewFromUrl() ? 'photos' : 'tree')
@@ -900,6 +908,54 @@
     revokeAvatarBlobs()
     await supabase.auth.signOut()
   }
+
+  function measureMaxContentWidth(el: HTMLElement, display = 'block'): number {
+    const probe = el.cloneNode(true) as HTMLElement
+    probe.style.cssText = `position:absolute;visibility:hidden;display:${display};width:max-content;max-width:none;min-width:0;height:auto;pointer-events:none;border:none;`
+    if (display === 'flex') {
+      for (const child of probe.children) {
+        const node = child as HTMLElement
+        node.style.flex = 'none'
+        node.style.width = 'auto'
+      }
+    }
+    document.body.appendChild(probe)
+    const width = probe.getBoundingClientRect().width
+    probe.remove()
+    return width
+  }
+
+  function updateTabsInline() {
+    if (!headerEl || !titleEl || !actionsEl || !navEl) return
+    const styles = getComputedStyle(headerEl)
+    const pad =
+      Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight)
+    const gap = Number.parseFloat(styles.columnGap || styles.gap) || 0
+    // Intrinsic sizes only — laid-out title width depends on the 1fr column and
+    // made the fit check circular (jitter at the collapse boundary).
+    const titleWidth = measureMaxContentWidth(titleEl)
+    const actionsWidth = measureMaxContentWidth(actionsEl, 'flex')
+    const navWidth = measureMaxContentWidth(navEl, 'flex')
+    // Centered row: side columns are equal, so each needs the wider of title/actions.
+    const needed = pad + gap * 2 + navWidth + 2 * Math.max(titleWidth, actionsWidth)
+    const room = headerEl.clientWidth
+    // Dead zone between collapse and expand so ResizeObserver can't oscillate.
+    if (tabsInline) {
+      if (room < needed) tabsInline = false
+    } else if (room >= needed + 48) {
+      tabsInline = true
+    }
+  }
+
+  $effect(() => {
+    if (!session || !headerEl || !titleEl || !actionsEl || !navEl) return
+    untrack(() => updateTabsInline())
+    const ro = new ResizeObserver(() => updateTabsInline())
+    ro.observe(headerEl)
+    ro.observe(titleEl)
+    ro.observe(actionsEl)
+    return () => ro.disconnect()
+  })
 </script>
 
 <ModeWatcher />
@@ -913,21 +969,34 @@
 {:else}
   <div class="flex h-dvh flex-col">
     <header
-      class="relative flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+      bind:this={headerEl}
+      class="shrink-0 border-b border-border bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 {tabsInline
+        ? 'grid min-h-14 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2'
+        : 'flex flex-wrap items-center gap-x-2'}"
     >
-      <h1 class="min-w-0 flex-1 truncate text-base font-semibold tracking-tight">
+      <h1
+        bind:this={titleEl}
+        class="flex min-h-14 min-w-0 items-center text-base font-semibold leading-tight tracking-tight {tabsInline
+          ? ''
+          : 'shrink-0'}"
+        style:order={tabsInline ? undefined : 1}
+      >
         Thomason Family Tree
       </h1>
       <nav
-        class="absolute left-1/2 flex -translate-x-1/2 gap-1"
+        bind:this={navEl}
+        class="flex gap-1 {tabsInline
+          ? 'h-14 items-stretch justify-self-center'
+          : 'order-[3] w-full basis-full border-t border-border'}"
         aria-label="Main"
       >
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === 'tree'}
-          class="inline-flex h-14 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors {activeTab ===
-          'tree'
+          class="inline-flex items-center justify-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors {tabsInline
+            ? 'h-full flex-none'
+            : 'h-11 flex-1'} {activeTab === 'tree'
             ? 'border-foreground text-foreground'
             : 'border-transparent text-muted-foreground hover:text-foreground'}"
           onclick={() => selectTab('tree')}
@@ -939,8 +1008,9 @@
           type="button"
           role="tab"
           aria-selected={activeTab === 'photos'}
-          class="inline-flex h-14 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors {activeTab ===
-          'photos'
+          class="inline-flex items-center justify-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors {tabsInline
+            ? 'h-full flex-none'
+            : 'h-11 flex-1'} {activeTab === 'photos'
             ? 'border-foreground text-foreground'
             : 'border-transparent text-muted-foreground hover:text-foreground'}"
           onclick={() => selectTab('photos')}
@@ -949,7 +1019,12 @@
           Photos
         </button>
       </nav>
-      <div class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+      <div
+        bind:this={actionsEl}
+        class="flex shrink-0 items-center gap-1.5 {tabsInline
+          ? 'justify-self-end'
+          : 'order-2 ml-auto'}"
+      >
         <ThemeToggle />
         <AccountMenu email={session.user.email ?? ''} canEdit={canEditTree} onSignOut={signOut} />
       </div>
@@ -1087,15 +1162,52 @@
               disabled={inviteCreating}
             />
           </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              class="size-4 rounded border-border"
-              bind:checked={inviteAsEditor}
-              disabled={inviteCreating}
-            />
-            <span class="font-medium">Admin</span>
-          </label>
+          <div class="space-y-1.5">
+            <span class="text-sm font-medium">Role</span>
+            <Tooltip.Provider delayDuration={200}>
+              <ToggleGroup.Root
+                type="single"
+                class="w-full overflow-hidden rounded-lg border border-input"
+                value={inviteAsEditor ? 'admin' : 'viewer'}
+                disabled={inviteCreating}
+                onValueChange={(value) => {
+                  if (value === 'admin' || value === 'viewer') {
+                    inviteAsEditor = value === 'admin'
+                  }
+                }}
+              >
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    {#snippet child({ props })}
+                      <ToggleGroup.Item
+                        {...props}
+                        value="viewer"
+                        class="flex-1 rounded-none border-0 border-r border-input"
+                      >
+                        Viewer
+                      </ToggleGroup.Item>
+                    {/snippet}
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side="bottom" class="max-w-56 text-pretty">
+                    Can view the family tree and edit their own profile. Cannot change other people
+                    or send invites.
+                  </Tooltip.Content>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    {#snippet child({ props })}
+                      <ToggleGroup.Item {...props} value="admin" class="flex-1 rounded-none border-0">
+                        Admin
+                      </ToggleGroup.Item>
+                    {/snippet}
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side="bottom" class="max-w-56 text-pretty">
+                    Can edit the whole family tree, invite others, and manage photos for anyone.
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              </ToggleGroup.Root>
+            </Tooltip.Provider>
+          </div>
           {#if inviteError}
             <p class="text-sm text-destructive">{inviteError}</p>
           {/if}

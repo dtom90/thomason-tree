@@ -37,7 +37,7 @@
     title={email}
   >
     <CircleUserIcon class="size-3.5 shrink-0" />
-    <span class="truncate">{email}</span>
+    <span class="hidden truncate sm:inline">{email}</span>
     <span class="sr-only">Account</span>
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="end" class="min-w-48">

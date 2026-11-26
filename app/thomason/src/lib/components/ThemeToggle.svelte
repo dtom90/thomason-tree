@@ -2,10 +2,14 @@
   import SunIcon from '@lucide/svelte/icons/sun'
   import MoonIcon from '@lucide/svelte/icons/moon'
   import MonitorIcon from '@lucide/svelte/icons/monitor'
-  import { resetMode, setMode } from 'mode-watcher'
+  import { setMode, userPrefersMode } from 'mode-watcher'
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
   import { buttonVariants } from '$lib/components/ui/button/index.js'
   import { cn } from '$lib/utils.js'
+
+  function onThemeChange(value: string | undefined) {
+    if (value === 'light' || value === 'dark' || value === 'system') setMode(value)
+  }
 </script>
 
 <DropdownMenu.Root>
@@ -21,17 +25,19 @@
     <span class="sr-only">Theme</span>
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="end">
-    <DropdownMenu.Item onclick={() => setMode('light')}>
-      <SunIcon class="size-4" />
-      Light
-    </DropdownMenu.Item>
-    <DropdownMenu.Item onclick={() => setMode('dark')}>
-      <MoonIcon class="size-4" />
-      Dark
-    </DropdownMenu.Item>
-    <DropdownMenu.Item onclick={() => resetMode()}>
-      <MonitorIcon class="size-4" />
-      System
-    </DropdownMenu.Item>
+    <DropdownMenu.RadioGroup value={userPrefersMode.current} onValueChange={onThemeChange}>
+      <DropdownMenu.RadioItem value="light" closeOnSelect>
+        <SunIcon class="size-4" />
+        Light
+      </DropdownMenu.RadioItem>
+      <DropdownMenu.RadioItem value="dark" closeOnSelect>
+        <MoonIcon class="size-4" />
+        Dark
+      </DropdownMenu.RadioItem>
+      <DropdownMenu.RadioItem value="system" closeOnSelect>
+        <MonitorIcon class="size-4" />
+        System
+      </DropdownMenu.RadioItem>
+    </DropdownMenu.RadioGroup>
   </DropdownMenu.Content>
 </DropdownMenu.Root>
