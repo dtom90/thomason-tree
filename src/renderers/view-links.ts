@@ -28,7 +28,7 @@ export default function updateLinks(svg: SVGElement, tree: Tree, props: ViewProp
   link_update.each(linkUpdate)
 
   function linkEnter(this: SVGPathElement, d: Link) {
-    d3.select(this).attr("fill", "none").attr("stroke", "#fff").attr("stroke-width", 1).style("opacity", 0)
+    d3.select(this).attr("fill", "none").attr("stroke", "currentColor").attr("stroke-width", 1).style("opacity", 0)
       .attr("d", createPath(d, true))
   }
 

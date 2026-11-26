@@ -701,6 +701,7 @@
 }
 
 .f3 .link {
+  stroke: currentColor;
   transition: stroke-width 0.2s ease-in-out;
 }
 

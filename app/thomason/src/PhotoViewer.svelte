@@ -12,8 +12,10 @@
     deleteRegion,
     fetchDriveImageUrl,
     listComments,
+    listRegionPersonOptions,
     listRegions,
-    updateRegionLabel,
+    updateRegion,
+    type PersonRef,
     type PhotoComment,
     type PhotoRegion,
   } from './drive-api'
@@ -32,10 +34,13 @@
   let comments = $state<PhotoComment[]>([])
   let selectedRegionId = $state<string | null>(null)
   let currentUserId = $state<string | null>(null)
+  let personOptions = $state<PersonRef[]>([])
   let drawing = $state(false)
   let drawStart = $state<{ x: number; y: number } | null>(null)
   let draftBox = $state<{ x: number; y: number; w: number; h: number } | null>(null)
   let pendingLabel = $state('')
+  /** Empty string means no tree person. */
+  let pendingPersonId = $state('')
   let showLabelPrompt = $state(false)
   let commentBody = $state('')
   let busy = $state(false)
@@ -47,6 +52,23 @@
       ? comments.filter((c) => c.region_id === selectedRegionId)
       : comments.filter((c) => c.region_id == null),
   )
+  const canAssociatePerson = $derived(personOptions.length > 0)
+  /** Options for the edit select, including a linked person outside the picker list. */
+  const editPersonOptions = $derived.by(() => {
+    const opts = [...personOptions]
+    const linked = selectedRegion?.person
+    if (linked && !opts.some((p) => p.id === linked.id)) {
+      opts.unshift(linked)
+    }
+    return opts
+  })
+  const pendingPersonName = $derived(
+    pendingPersonId
+      ? (editPersonOptions.find((p) => p.id === pendingPersonId)?.displayName ??
+          personOptions.find((p) => p.id === pendingPersonId)?.displayName ??
+          null)
+      : null,
+  )
 
   async function loadAll() {
     loadError = null
@@ -57,7 +79,14 @@
       currentUserId = user?.id ?? null
       if (imageUrl) URL.revokeObjectURL(imageUrl)
       imageUrl = await fetchDriveImageUrl(fileId, 'full')
-      ;[regions, comments] = await Promise.all([listRegions(fileId), listComments(fileId)])
+      const [nextRegions, nextComments, personPicker] = await Promise.all([
+        listRegions(fileId),
+        listComments(fileId),
+        listRegionPersonOptions(),
+      ])
+      regions = nextRegions
+      comments = nextComments
+      personOptions = personPicker.options
     } catch (err) {
       loadError = err instanceof Error ? err.message : 'Failed to load photo'
     }
@@ -111,7 +140,22 @@
       return
     }
     pendingLabel = ''
+    pendingPersonId = ''
     showLabelPrompt = true
+  }
+
+  function onPersonSelectChange(nextId: string) {
+    const prevName = pendingPersonName
+    pendingPersonId = nextId
+    const nextName = nextId
+      ? (personOptions.find((p) => p.id === nextId)?.displayName ?? null)
+      : null
+    const label = pendingLabel.trim()
+    if (nextName && (!label || label === prevName)) {
+      pendingLabel = nextName
+    } else if (!nextId && prevName && label === prevName) {
+      pendingLabel = ''
+    }
   }
 
   async function confirmRegion() {
@@ -125,12 +169,14 @@
         w: draftBox.w,
         h: draftBox.h,
         label: pendingLabel.trim() || null,
+        person_id: pendingPersonId || null,
       })
       regions = [...regions, region]
       selectedRegionId = region.id
       draftBox = null
       showLabelPrompt = false
-      pendingLabel = ''
+      pendingLabel = region.label ?? ''
+      pendingPersonId = region.person_id ?? ''
     } catch (err) {
       loadError = err instanceof Error ? err.message : 'Failed to save box'
     } finally {
@@ -142,16 +188,20 @@
     draftBox = null
     showLabelPrompt = false
     pendingLabel = ''
+    pendingPersonId = ''
   }
 
-  async function saveLabel() {
+  async function saveRegionDetails() {
     if (!selectedRegion) return
     busy = true
     try {
-      const updated = await updateRegionLabel(selectedRegion.id, pendingLabel.trim() || null)
+      const updated = await updateRegion(selectedRegion.id, {
+        label: pendingLabel.trim() || null,
+        person_id: pendingPersonId || null,
+      })
       regions = regions.map((r) => (r.id === updated.id ? updated : r))
     } catch (err) {
-      loadError = err instanceof Error ? err.message : 'Failed to update label'
+      loadError = err instanceof Error ? err.message : 'Failed to update box'
     } finally {
       busy = false
     }
@@ -207,6 +257,10 @@
     if (selectedRegionId) {
       const r = regions.find((x) => x.id === selectedRegionId)
       pendingLabel = r?.label ?? ''
+      pendingPersonId = r?.person_id ?? ''
+    } else {
+      pendingLabel = ''
+      pendingPersonId = ''
     }
   }
 
@@ -302,25 +356,30 @@
             <p class="text-xs font-medium">
               Box by {selectedRegion.author.displayName}
             </p>
-            {#if selectedRegion.person}
-              <p
-                class="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
-              >
-                <NetworkIcon class="size-3.5 shrink-0 text-muted-foreground" />
-                <span>
-                  On tree as
-                  <span class="font-medium">{selectedRegion.person.displayName}</span>
-                </span>
-              </p>
-            {/if}
             {#if currentUserId === selectedRegion.user_id}
+              {#if canAssociatePerson || selectedRegion.person}
+                <label class="block space-y-1">
+                  <span class="text-xs text-muted-foreground">On tree as</span>
+                  <select
+                    class="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                    value={pendingPersonId}
+                    disabled={!canAssociatePerson}
+                    onchange={(e) => onPersonSelectChange(e.currentTarget.value)}
+                  >
+                    <option value="">Not linked</option>
+                    {#each editPersonOptions as person (person.id)}
+                      <option value={person.id}>{person.displayName}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               <input
                 class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
                 placeholder="Label (e.g. name)"
                 bind:value={pendingLabel}
               />
               <div class="flex gap-2">
-                <Button size="sm" type="button" disabled={busy} onclick={saveLabel}>Save label</Button>
+                <Button size="sm" type="button" disabled={busy} onclick={saveRegionDetails}>Save</Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -332,10 +391,23 @@
                   Delete
                 </Button>
               </div>
-            {:else if selectedRegion.label && selectedRegion.label !== selectedRegion.person?.displayName}
-              <p class="text-sm">{selectedRegion.label}</p>
-            {:else if !selectedRegion.person}
-              <p class="text-sm text-muted-foreground">No label</p>
+            {:else}
+              {#if selectedRegion.person}
+                <p
+                  class="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
+                >
+                  <NetworkIcon class="size-3.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    On tree as
+                    <span class="font-medium">{selectedRegion.person.displayName}</span>
+                  </span>
+                </p>
+              {/if}
+              {#if selectedRegion.label && selectedRegion.label !== selectedRegion.person?.displayName}
+                <p class="text-sm">{selectedRegion.label}</p>
+              {:else if !selectedRegion.person}
+                <p class="text-sm text-muted-foreground">No label</p>
+              {/if}
             {/if}
             <Button size="sm" variant="secondary" type="button" onclick={() => (selectedRegionId = null)}>
               Clear selection
@@ -395,11 +467,28 @@
   {#if showLabelPrompt && draftBox}
     <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <div class="w-full max-w-sm rounded-lg border border-border bg-card p-4 shadow-lg">
-        <h3 class="text-sm font-semibold">Label this face</h3>
-        <p class="mt-1 text-xs text-muted-foreground">Optional — e.g. a name or note.</p>
+        <h3 class="text-sm font-semibold">Tag this face</h3>
+        <p class="mt-1 text-xs text-muted-foreground">
+          Optionally link to someone on the tree and add a label.
+        </p>
+        {#if canAssociatePerson}
+          <label class="mt-3 block space-y-1">
+            <span class="text-xs text-muted-foreground">On tree as</span>
+            <select
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+              value={pendingPersonId}
+              onchange={(e) => onPersonSelectChange(e.currentTarget.value)}
+            >
+              <option value="">Not linked</option>
+              {#each personOptions as person (person.id)}
+                <option value={person.id}>{person.displayName}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
         <input
           class="mt-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-          placeholder="Label"
+          placeholder="Label (e.g. name)"
           bind:value={pendingLabel}
         />
         <div class="mt-3 flex justify-end gap-2">

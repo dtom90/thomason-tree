@@ -289,10 +289,49 @@ export async function createRegionsForPersonUpload(input: {
   return created
 }
 
-export async function updateRegionLabel(id: string, label: string | null): Promise<PhotoRegion> {
+/** People the current user may attach to a photo region (RLS: editors = all, viewers = linked only). */
+export async function listRegionPersonOptions(): Promise<{
+  options: PersonRef[]
+  canEditTree: boolean
+  linkedPersonId: string | null
+}> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const [peopleRes, linkedRes, canEditRes] = await Promise.all([
+    supabase.from('people').select('id, first_name, last_name'),
+    supabase.from('people').select('id').eq('user_id', user.id).maybeSingle(),
+    supabase.rpc('can_edit_tree'),
+  ])
+  if (peopleRes.error) throw peopleRes.error
+  if (linkedRes.error) throw linkedRes.error
+  if (canEditRes.error) throw canEditRes.error
+
+  const canEditTree = canEditRes.data === true
+  const linkedPersonId = linkedRes.data?.id ?? null
+
+  let options: PersonRef[] = (peopleRes.data ?? []).map((p) => ({
+    id: p.id,
+    displayName: `${p.first_name} ${p.last_name}`.trim() || 'Family member',
+  }))
+  options.sort((a, b) => a.displayName.localeCompare(b.displayName))
+
+  if (!canEditTree) {
+    options = linkedPersonId ? options.filter((p) => p.id === linkedPersonId) : []
+  }
+
+  return { options, canEditTree, linkedPersonId }
+}
+
+export async function updateRegion(
+  id: string,
+  patch: { label?: string | null; person_id?: string | null },
+): Promise<PhotoRegion> {
   const { data, error } = await supabase
     .from('photo_regions')
-    .update({ label, updated_at: new Date().toISOString() })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('*')
     .single()
@@ -300,6 +339,10 @@ export async function updateRegionLabel(id: string, label: string | null): Promi
   const row = data as PhotoRegionRow
   const authors = await authorMapForUserIds([row.user_id])
   return (await withPeople([row], authors))[0]
+}
+
+export async function updateRegionLabel(id: string, label: string | null): Promise<PhotoRegion> {
+  return updateRegion(id, { label })
 }
 
 export async function deleteRegion(id: string): Promise<void> {
