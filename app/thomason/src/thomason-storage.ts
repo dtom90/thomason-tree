@@ -65,22 +65,35 @@ export async function sendPersonInviteEmail(opts: {
   grantCanEdit: boolean
   inviterName?: string
 }): Promise<void> {
-  const { data, error } = await supabase.functions.invoke('send-person-invite', {
-    body: {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error('Not signed in')
+
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL as string
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+  const res = await fetch(`${baseUrl}/functions/v1/send-person-invite`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: anonKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
       to: opts.to,
       inviteUrl: opts.inviteUrl,
       personLabel: opts.personLabel,
       personUrl: opts.personUrl,
       grantCanEdit: opts.grantCanEdit,
       inviterName: opts.inviterName,
-    },
+    }),
   })
-  const bodyError =
-    data && typeof data === 'object' && 'error' in data && data.error
-      ? String(data.error)
-      : null
-  if (error) throw new Error(bodyError || error.message)
-  if (bodyError) throw new Error(bodyError)
+
+  const payload = (await res.json().catch(() => null)) as { error?: string } | null
+  if (!res.ok) {
+    throw new Error(payload?.error || `Edge Function returned ${res.status}`)
+  }
+  if (payload?.error) throw new Error(payload.error)
 }
 
 /** Redeem a pending invite for the signed-in user (links person + optional can_edit). */

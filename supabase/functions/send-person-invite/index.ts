@@ -150,7 +150,17 @@ Deno.serve(async (req) => {
     })
     if (!inviteSend.ok) {
       console.error('Resend invite error', inviteSend.status, inviteSend.detail)
-      return errorResponse('Failed to send invitation email', 502)
+      let detail = inviteSend.detail.slice(0, 500)
+      try {
+        const parsed = JSON.parse(inviteSend.detail) as { message?: string }
+        if (parsed.message) detail = parsed.message
+      } catch {
+        /* keep raw detail */
+      }
+      return errorResponse(
+        `Failed to send invitation email (${inviteSend.status}): ${detail}`,
+        502,
+      )
     }
 
     const { data: editorRows, error: editorError } = await supabase.rpc(
