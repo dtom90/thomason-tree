@@ -17,6 +17,7 @@ declare module 'family-chart' {
 
   export class CardHtml {
     setCardDisplay(fields: string[][]): CardHtml
+    setStyle(style: 'default' | 'imageCircleRect' | 'imageCircle' | 'imageRect' | 'rect'): CardHtml
     setOnCardUpdate(fn: (this: HTMLElement, d: { data: Datum }) => void): CardHtml
   }
 
@@ -45,7 +46,8 @@ declare module 'family-chart' {
     setCardYSpacing(n: number): Chart
     setCardHtml(): CardHtml
     editTree(): EditTree
-    updateTree(props: { initial?: boolean }): void
+    updateTree(props?: { initial?: boolean }): Chart
+    updateData(data: Data): Chart
     updateMainId(id: string): Chart
     getMainDatum(): Datum | undefined
   }

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte'
   import XIcon from '@lucide/svelte/icons/x'
   import Trash2Icon from '@lucide/svelte/icons/trash-2'
+  import NetworkIcon from '@lucide/svelte/icons/network'
   import { Button } from '$lib/components/ui/button/index.js'
   import { supabase } from '$lib/supabase'
   import {
@@ -250,6 +251,9 @@
           <img src={imageUrl} alt={fileName} class="block max-h-[min(80dvh,900px)] max-w-full object-contain" draggable="false" />
           <div class="pointer-events-none absolute inset-0">
             {#each regions as region (region.id)}
+              {@const boxTitle = region.person
+                ? `On tree: ${region.person.displayName}`
+                : region.label || 'Face box'}
               <button
                 type="button"
                 class="pointer-events-auto absolute border-2 bg-primary/10 {selectedRegionId === region.id
@@ -261,13 +265,18 @@
                   e.stopPropagation()
                   selectRegion(region.id)
                 }}
-                title={region.label || 'Face box'}
+                title={boxTitle}
               >
-                {#if region.label}
+                {#if region.person || region.label}
                   <span
-                    class="absolute -top-5 left-0 max-w-[12rem] truncate rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground"
+                    class="absolute -top-5 left-0 flex max-w-[14rem] items-center gap-1 truncate rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground"
                   >
-                    {region.label}
+                    {#if region.person}
+                      <NetworkIcon class="size-2.5 shrink-0" />
+                      {region.person.displayName}
+                    {:else}
+                      {region.label}
+                    {/if}
                   </span>
                 {/if}
               </button>
@@ -293,6 +302,17 @@
             <p class="text-xs font-medium">
               Box by {selectedRegion.author.displayName}
             </p>
+            {#if selectedRegion.person}
+              <p
+                class="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
+              >
+                <NetworkIcon class="size-3.5 shrink-0 text-muted-foreground" />
+                <span>
+                  On tree as
+                  <span class="font-medium">{selectedRegion.person.displayName}</span>
+                </span>
+              </p>
+            {/if}
             {#if currentUserId === selectedRegion.user_id}
               <input
                 class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
@@ -312,8 +332,10 @@
                   Delete
                 </Button>
               </div>
-            {:else}
-              <p class="text-sm">{selectedRegion.label || 'No label'}</p>
+            {:else if selectedRegion.label && selectedRegion.label !== selectedRegion.person?.displayName}
+              <p class="text-sm">{selectedRegion.label}</p>
+            {:else if !selectedRegion.person}
+              <p class="text-sm text-muted-foreground">No label</p>
             {/if}
             <Button size="sm" variant="secondary" type="button" onclick={() => (selectedRegionId = null)}>
               Clear selection

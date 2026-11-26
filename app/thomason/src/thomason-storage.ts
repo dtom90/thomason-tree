@@ -8,6 +8,7 @@ export type TreeLoadResult = {
   linkedPerson: LinkedPerson | null
   /** Person ids that already have a user_id linked. */
   claimedPersonIds: Set<string>
+  people: PersonRow[]
 }
 
 export async function getCurrentPerson(): Promise<LinkedPerson | null> {
@@ -59,6 +60,7 @@ export async function loadTree(): Promise<TreeLoadResult> {
     data: toChartData(people, relationships),
     linkedPerson,
     claimedPersonIds,
+    people,
   }
 }
 
@@ -82,17 +84,40 @@ export async function saveOwnPerson(data: Data, personId: string): Promise<void>
   if (error) throw error
 }
 
+export async function setPersonAvatar(
+  personId: string,
+  avatar: { driveFileId: string; regionId: string | null } | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('people')
+    .update({
+      avatar_drive_file_id: avatar?.driveFileId ?? null,
+      avatar_region_id: avatar?.regionId ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', personId)
+  if (error) throw error
+}
+
 export async function saveTree(data: Data): Promise<void> {
   const { people: chartPeople, relationships } = fromChartData(data)
 
   const { data: existing, error: existingError } = await supabase
     .from('people')
-    .select('id, user_id, can_edit')
+    .select('id, user_id, can_edit, avatar_drive_file_id, avatar_region_id')
 
   if (existingError) throw existingError
 
   const metaById = new Map(
-    (existing ?? []).map((row) => [row.id, { user_id: row.user_id, can_edit: row.can_edit }]),
+    (existing ?? []).map((row) => [
+      row.id,
+      {
+        user_id: row.user_id,
+        can_edit: row.can_edit,
+        avatar_drive_file_id: row.avatar_drive_file_id,
+        avatar_region_id: row.avatar_region_id,
+      },
+    ]),
   )
 
   const upsertRows = chartPeople.map((person) => {
@@ -101,6 +126,8 @@ export async function saveTree(data: Data): Promise<void> {
       ...person,
       user_id: meta?.user_id ?? null,
       can_edit: meta?.can_edit ?? false,
+      avatar_drive_file_id: meta?.avatar_drive_file_id ?? null,
+      avatar_region_id: meta?.avatar_region_id ?? null,
       updated_at: new Date().toISOString(),
     }
   })

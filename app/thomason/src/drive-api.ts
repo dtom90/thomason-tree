@@ -26,7 +26,15 @@ export type AuthorInfo = {
   displayName: string
 }
 
-export type PhotoRegion = PhotoRegionRow & { author: AuthorInfo }
+export type PersonRef = {
+  id: string
+  displayName: string
+}
+
+export type PhotoRegion = PhotoRegionRow & {
+  author: AuthorInfo
+  person: PersonRef | null
+}
 export type PhotoComment = PhotoCommentRow & { author: AuthorInfo }
 
 async function authHeaders(): Promise<HeadersInit> {
@@ -116,6 +124,35 @@ function withAuthors<T extends { user_id: string }>(
   }))
 }
 
+async function personMapForIds(personIds: Array<string | null | undefined>): Promise<Map<string, PersonRef>> {
+  const unique = [...new Set(personIds.filter((id): id is string => !!id))]
+  const map = new Map<string, PersonRef>()
+  if (unique.length === 0) return map
+
+  const { data: people, error } = await supabase
+    .from('people')
+    .select('id, first_name, last_name')
+    .in('id', unique)
+  if (error) throw error
+
+  for (const p of people ?? []) {
+    const name = `${p.first_name} ${p.last_name}`.trim() || 'Family member'
+    map.set(p.id, { id: p.id, displayName: name })
+  }
+  return map
+}
+
+async function withPeople(rows: PhotoRegionRow[], authors: Map<string, AuthorInfo>): Promise<PhotoRegion[]> {
+  const people = await personMapForIds(rows.map((r) => r.person_id))
+  return rows.map((row) => ({
+    ...row,
+    author: authors.get(row.user_id) ?? { userId: row.user_id, displayName: 'Family member' },
+    person: row.person_id
+      ? (people.get(row.person_id) ?? { id: row.person_id, displayName: 'Family member' })
+      : null,
+  }))
+}
+
 export async function listRegions(driveFileId: string): Promise<PhotoRegion[]> {
   const { data, error } = await supabase
     .from('photo_regions')
@@ -125,7 +162,7 @@ export async function listRegions(driveFileId: string): Promise<PhotoRegion[]> {
   if (error) throw error
   const rows = (data ?? []) as PhotoRegionRow[]
   const authors = await authorMapForUserIds(rows.map((r) => r.user_id))
-  return withAuthors(rows, authors)
+  return withPeople(rows, authors)
 }
 
 /**
@@ -190,7 +227,7 @@ export async function listRegionsForPerson(personId: string): Promise<PhotoRegio
   if (error) throw error
   const rows = (data ?? []) as PhotoRegionRow[]
   const authors = await authorMapForUserIds(rows.map((r) => r.user_id))
-  return withAuthors(rows, authors)
+  return withPeople(rows, authors)
 }
 
 export async function createRegion(input: {
@@ -224,7 +261,7 @@ export async function createRegion(input: {
   if (error) throw error
   const row = data as PhotoRegionRow
   const authors = await authorMapForUserIds([row.user_id])
-  return withAuthors([row], authors)[0]
+  return (await withPeople([row], authors))[0]
 }
 
 export async function createRegionsForPersonUpload(input: {
@@ -262,7 +299,7 @@ export async function updateRegionLabel(id: string, label: string | null): Promi
   if (error) throw error
   const row = data as PhotoRegionRow
   const authors = await authorMapForUserIds([row.user_id])
-  return withAuthors([row], authors)[0]
+  return (await withPeople([row], authors))[0]
 }
 
 export async function deleteRegion(id: string): Promise<void> {

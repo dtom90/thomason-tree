@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import UploadIcon from '@lucide/svelte/icons/upload'
+  import CheckIcon from '@lucide/svelte/icons/check'
   import { Button } from '$lib/components/ui/button/index.js'
   import { detectFaceBoxes } from './face-detect'
   import {
@@ -12,25 +13,44 @@
     type PhotoRegion,
   } from './drive-api'
   import { signInWithGoogleDrive } from './google-auth'
+  import { setPersonAvatar } from './thomason-storage'
 
   type Props = {
     personId: string
     personLabel?: string
+    avatarDriveFileId?: string | null
+    canSetAvatar?: boolean
+    onAvatarChange?: (
+      personId: string,
+      avatar: { driveFileId: string; regionId: string | null } | null,
+    ) => void
   }
 
-  let { personId, personLabel = '' }: Props = $props()
+  let {
+    personId,
+    personLabel = '',
+    avatarDriveFileId = null,
+    canSetAvatar = false,
+    onAvatarChange,
+  }: Props = $props()
 
   type GalleryItem = {
     driveFileId: string
+    regionId: string | null
     regionCount: number
     thumbUrl: string | null
   }
 
   let items = $state<GalleryItem[]>([])
+  let selectedAvatarFileId = $state<string | null>(avatarDriveFileId)
   let loadError = $state<string | null>(null)
   let busy = $state(false)
   let fileInput: HTMLInputElement | undefined = $state()
   const thumbUrls = new Set<string>()
+
+  $effect(() => {
+    selectedAvatarFileId = avatarDriveFileId
+  })
 
   function revokeThumbs() {
     for (const url of thumbUrls) URL.revokeObjectURL(url)
@@ -60,6 +80,7 @@
         }
         next.push({
           driveFileId,
+          regionId: fileRegions[0]?.id ?? null,
           regionCount: fileRegions.length,
           thumbUrl,
         })
@@ -130,6 +151,37 @@
     }
   }
 
+  async function chooseAvatar(item: GalleryItem) {
+    if (!canSetAvatar || busy) return
+    busy = true
+    loadError = null
+    try {
+      const avatar = { driveFileId: item.driveFileId, regionId: item.regionId }
+      await setPersonAvatar(personId, avatar)
+      selectedAvatarFileId = item.driveFileId
+      onAvatarChange?.(personId, avatar)
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to set profile photo'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function clearAvatar() {
+    if (!canSetAvatar || busy || !selectedAvatarFileId) return
+    busy = true
+    loadError = null
+    try {
+      await setPersonAvatar(personId, null)
+      selectedAvatarFileId = null
+      onAvatarChange?.(personId, null)
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to clear profile photo'
+    } finally {
+      busy = false
+    }
+  }
+
   onMount(() => {
     void loadGallery()
   })
@@ -160,6 +212,22 @@
     />
   </div>
 
+  {#if canSetAvatar && items.length > 0}
+    <p class="text-xs text-muted-foreground">
+      Click a photo to use it as the profile picture on the tree.
+      {#if selectedAvatarFileId}
+        <button
+          type="button"
+          class="ml-1 underline underline-offset-2 hover:text-foreground"
+          disabled={busy}
+          onclick={clearAvatar}
+        >
+          Clear profile photo
+        </button>
+      {/if}
+    </p>
+  {/if}
+
   {#if loadError}
     <div class="space-y-2">
       <p class="text-xs text-destructive">{loadError}</p>
@@ -183,13 +251,29 @@
   {:else}
     <div class="grid grid-cols-3 gap-2">
       {#each items as item (item.driveFileId)}
-        <div class="relative aspect-square overflow-hidden rounded-md bg-muted">
+        {@const isAvatar = selectedAvatarFileId === item.driveFileId}
+        <button
+          type="button"
+          class="relative aspect-square overflow-hidden rounded-md bg-muted text-left {canSetAvatar
+            ? 'ring-offset-background transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+            : ''} {isAvatar ? 'ring-2 ring-primary' : ''}"
+          disabled={!canSetAvatar || busy}
+          onclick={() => chooseAvatar(item)}
+          title={canSetAvatar ? (isAvatar ? 'Current profile photo' : 'Use as profile photo') : undefined}
+        >
           {#if item.thumbUrl}
             <img src={item.thumbUrl} alt="" class="h-full w-full object-cover" />
           {:else}
             <div class="flex h-full items-center justify-center text-[10px] text-muted-foreground">
               Photo
             </div>
+          {/if}
+          {#if isAvatar}
+            <span
+              class="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+            >
+              <CheckIcon class="size-3" />
+            </span>
           {/if}
           {#if item.regionCount > 1}
             <span
@@ -198,7 +282,7 @@
               {item.regionCount} faces
             </span>
           {/if}
-        </div>
+        </button>
       {/each}
     </div>
   {/if}

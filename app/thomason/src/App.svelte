@@ -13,8 +13,10 @@
   import AuthForm from './AuthForm.svelte'
   import DriveBrowser from './DriveBrowser.svelte'
   import PersonPhotos from './PersonPhotos.svelte'
+  import { hydrateChartAvatars, loadAvatarRefs, resolveAvatarUrl } from './avatar'
   import { loadTree, saveOwnPerson, saveTree, linkMyPerson, unlinkMyPerson } from './thomason-storage'
   import type { LinkedPerson } from './tree-mapper'
+  import type { Chart } from 'family-chart'
 
   type Tab = 'tree' | 'photos'
 
@@ -24,6 +26,8 @@
   let activeTab = $state<Tab>('tree')
   let linkedPerson = $state<LinkedPerson | null>(null)
   let editTree: EditTree | undefined
+  let chart: Chart | undefined
+  let chartData: Data = []
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let loadGeneration = 0
   let unlinkOpen = $state(false)
@@ -32,6 +36,8 @@
   let linkPersonId = $state<string | null>(null)
   let linking = $state(false)
   let personPhotosMount: Record<string, unknown> | null = null
+  let avatarBlobUrls: string[] = []
+  let avatarDriveByPerson = $state<Map<string, string | null>>(new Map())
 
   const canEditTree = $derived(linkedPerson?.can_edit === true)
 
@@ -43,6 +49,11 @@
       /* already gone */
     }
     personPhotosMount = null
+  }
+
+  function revokeAvatarBlobs() {
+    for (const url of avatarBlobUrls) URL.revokeObjectURL(url)
+    avatarBlobUrls = []
   }
 
   function schedulePersist() {
@@ -64,11 +75,62 @@
   function destroyChart() {
     clearTimeout(persistTimer)
     unmountPersonPhotos()
+    revokeAvatarBlobs()
     editTree = undefined
+    chart = undefined
+    chartData = []
+    avatarDriveByPerson = new Map()
     if (chartEl) chartEl.innerHTML = ''
   }
 
-  function injectPersonPhotos(form: HTMLElement, personId: string, data: Data) {
+  async function handleAvatarChange(
+    personId: string,
+    avatar: { driveFileId: string; regionId: string | null } | null,
+  ) {
+    const nextMap = new Map(avatarDriveByPerson)
+    nextMap.set(personId, avatar?.driveFileId ?? null)
+    avatarDriveByPerson = nextMap
+
+    const datum = chartData.find((d) => d.id === personId)
+    if (!datum || !chart) return
+
+    const previous = typeof datum.data.avatar === 'string' ? datum.data.avatar : null
+    if (previous && avatarBlobUrls.includes(previous)) {
+      URL.revokeObjectURL(previous)
+      avatarBlobUrls = avatarBlobUrls.filter((u) => u !== previous)
+    }
+
+    if (!avatar) {
+      delete datum.data.avatar
+      chart.updateTree({})
+      return
+    }
+
+    try {
+      const refs = await loadAvatarRefs([
+        {
+          id: personId,
+          avatar_drive_file_id: avatar.driveFileId,
+          avatar_region_id: avatar.regionId,
+        },
+      ])
+      const ref = refs.get(personId)
+      if (!ref) return
+      const url = await resolveAvatarUrl(ref)
+      avatarBlobUrls.push(url)
+      datum.data.avatar = url
+      chart.updateTree({})
+    } catch (err) {
+      console.error('Failed to refresh avatar', err)
+    }
+  }
+
+  function injectPersonPhotos(
+    form: HTMLElement,
+    personId: string,
+    data: Data,
+    canSetAvatar: boolean,
+  ) {
     unmountPersonPhotos()
     form.querySelector('.f3-person-photos-host')?.remove()
 
@@ -88,7 +150,13 @@
 
     personPhotosMount = mount(PersonPhotos, {
       target: host,
-      props: { personId, personLabel },
+      props: {
+        personId,
+        personLabel,
+        avatarDriveFileId: avatarDriveByPerson.get(personId) ?? null,
+        canSetAvatar,
+        onAvatarChange: handleAvatarChange,
+      },
     })
   }
 
@@ -163,6 +231,7 @@
     const treeEditor = linked?.can_edit === true
     const selfEditOnly = linked != null && !treeEditor
 
+    chartData = data
     const f3Chart = f3
       .createChart(chartEl, data)
       .setTransitionTime(1000)
@@ -171,6 +240,7 @@
 
     const f3Card = f3Chart
       .setCardHtml()
+      .setStyle('imageCircleRect')
       .setCardDisplay([['first name', 'last name']])
       .setOnCardUpdate(function (this: HTMLElement, d) {
         if (!centerId || d.data.id !== centerId) return
@@ -210,7 +280,9 @@
           editable: !form.classList.contains('non-editable'),
           selfEditOnly,
         })
-        injectPersonPhotos(form, personId, data)
+        const canSetAvatar =
+          treeEditor || (selfEditOnly && !!centerId && personId === centerId)
+        injectPersonPhotos(form, personId, data, canSetAvatar)
       })
 
     if (treeEditor) {
@@ -225,6 +297,7 @@
       tree.setNoEdit()
     }
 
+    chart = f3Chart
     editTree = tree
     f3Chart.updateTree({ initial: true })
     const main = f3Chart.getMainDatum()
@@ -239,6 +312,17 @@
       const result = await loadTree()
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
+      avatarDriveByPerson = new Map(
+        result.people.map((p) => [p.id, p.avatar_drive_file_id]),
+      )
+      revokeAvatarBlobs()
+      const refs = await loadAvatarRefs(result.people)
+      if (generation !== loadGeneration) return
+      avatarBlobUrls = await hydrateChartAvatars(result.data, refs)
+      if (generation !== loadGeneration) {
+        revokeAvatarBlobs()
+        return
+      }
       initChart(result.data, result.linkedPerson, result.claimedPersonIds)
     } catch (err) {
       if (generation !== loadGeneration) return

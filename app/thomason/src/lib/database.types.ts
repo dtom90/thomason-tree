@@ -14,6 +14,8 @@ export type PersonRow = {
   gender: 'M' | 'F'
   user_id: string | null
   can_edit: boolean
+  avatar_drive_file_id: string | null
+  avatar_region_id: string | null
   updated_at: string
 }
 
@@ -67,6 +69,8 @@ export type Database = {
           gender: 'M' | 'F'
           user_id?: string | null
           can_edit?: boolean
+          avatar_drive_file_id?: string | null
+          avatar_region_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -77,6 +81,8 @@ export type Database = {
           gender?: 'M' | 'F'
           user_id?: string | null
           can_edit?: boolean
+          avatar_drive_file_id?: string | null
+          avatar_region_id?: string | null
           updated_at?: string
         }
         Relationships: []
