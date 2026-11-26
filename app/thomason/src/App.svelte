@@ -532,9 +532,12 @@
   function initChart(
     data: Data,
     linked: LinkedPerson | null,
+    avatarDrive: Map<string, string | null> = new Map(),
   ) {
     if (!chartEl) return
     destroyChart()
+    // Restore before editTree.open() — form creation reads this map.
+    avatarDriveByPerson = avatarDrive
 
     const centerId = linked?.id ?? null
     const treeEditor = linked?.can_edit === true
@@ -683,7 +686,6 @@
       invitesByPersonId = result.invitesByPersonId
       linkedEmailsByPersonId = result.linkedEmailsByPersonId
       pendingPersonInvites = []
-      // Build before initChart — destroyChart() clears avatarDriveByPerson.
       const nextAvatarDriveByPerson = new Map(
         result.people.map((p) => [p.id, p.avatar_drive_file_id]),
       )
@@ -695,8 +697,7 @@
         revokeAvatarBlobs()
         return
       }
-      initChart(result.data, result.linkedPerson)
-      avatarDriveByPerson = nextAvatarDriveByPerson
+      initChart(result.data, result.linkedPerson, nextAvatarDriveByPerson)
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
