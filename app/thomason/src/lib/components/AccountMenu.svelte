@@ -44,7 +44,7 @@
     <DropdownMenu.Label class="space-y-1.5 font-normal">
       <div class="truncate" title={email}>{email}</div>
       <Badge variant="secondary" class="font-normal">
-        {canEdit ? 'Editor' : 'Viewer'}
+        {canEdit ? 'Admin' : 'Viewer'}
       </Badge>
     </DropdownMenu.Label>
     <DropdownMenu.Separator />

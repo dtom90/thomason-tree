@@ -1068,7 +1068,7 @@
               bind:checked={inviteAsEditor}
               disabled={inviteCreating}
             />
-            <span class="font-medium">Editor</span>
+            <span class="font-medium">Admin</span>
           </label>
           {#if inviteError}
             <p class="text-sm text-destructive">{inviteError}</p>

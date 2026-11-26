@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
 
     const { data: canEdit, error: canEditError } = await supabase.rpc('can_edit_tree')
     if (canEditError) return errorResponse(canEditError.message, 400)
-    if (!canEdit) return errorResponse('Not an editor', 403)
+    if (!canEdit) return errorResponse('Not an admin', 403)
 
     const body = (await req.json()) as InviteBody
     const to = body.to?.trim().toLowerCase() ?? ''
@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
     const from =
       Deno.env.get('RESEND_FROM_EMAIL')?.trim() ||
       'Thomason Family Tree <onboarding@resend.dev>'
-    const role = grantCanEdit ? 'editor' : 'viewer'
+    const role = grantCanEdit ? 'admin' : 'viewer'
     const safePerson = escapeHtml(personLabel)
     const safeInviter = escapeHtml(inviterName)
     const safeInvitee = escapeHtml(to)

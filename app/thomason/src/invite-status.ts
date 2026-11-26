@@ -67,8 +67,8 @@ export function inviteStatusCopy(status: PersonInviteStatus): string {
       return status.email ? `Joined — ${status.email}` : 'Joined'
     case 'pending':
       return status.email
-        ? `Pending — ${status.email}${status.grantCanEdit ? ' (editor)' : ''}`
-        : `Pending — invite link created${status.grantCanEdit ? ' (editor)' : ''}`
+        ? `Pending — ${status.email}${status.grantCanEdit ? ' (admin)' : ''}`
+        : `Pending — invite link created${status.grantCanEdit ? ' (admin)' : ''}`
     case 'redeemed':
       return status.email ? `Accepted — ${status.email}` : 'Invite accepted'
     case 'expired':

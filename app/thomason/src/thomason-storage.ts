@@ -135,7 +135,7 @@ export async function loadPersonInvites(): Promise<Map<string, PersonInviteRow>>
 export async function loadLinkedPersonEmails(): Promise<Map<string, string>> {
   const { data, error } = await supabase.rpc('list_linked_person_emails')
   if (error) {
-    if (/not an editor|permission|policy|rls/i.test(error.message)) return new Map()
+    if (/not an (editor|admin)|permission|policy|rls/i.test(error.message)) return new Map()
     throw error
   }
   const map = new Map<string, string>()
