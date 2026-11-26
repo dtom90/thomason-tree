@@ -19,6 +19,7 @@
     type PhotoComment,
     type PhotoRegion,
   } from './drive-api'
+  import PersonSearchInput from './PersonSearchInput.svelte'
 
   type Props = {
     fileId: string
@@ -41,6 +42,8 @@
   let pendingLabel = $state('')
   /** Empty string means no tree person. */
   let pendingPersonId = $state('')
+  /** Display name for the currently linked person (for label auto-fill). */
+  let linkedPersonName = $state<string | null>(null)
   let showLabelPrompt = $state(false)
   let commentBody = $state('')
   let busy = $state(false)
@@ -62,14 +65,6 @@
     }
     return opts
   })
-  const pendingPersonName = $derived(
-    pendingPersonId
-      ? (editPersonOptions.find((p) => p.id === pendingPersonId)?.displayName ??
-          personOptions.find((p) => p.id === pendingPersonId)?.displayName ??
-          null)
-      : null,
-  )
-
   async function loadAll() {
     loadError = null
     try {
@@ -141,21 +136,20 @@
     }
     pendingLabel = ''
     pendingPersonId = ''
+    linkedPersonName = null
     showLabelPrompt = true
   }
 
-  function onPersonSelectChange(nextId: string) {
-    const prevName = pendingPersonName
-    pendingPersonId = nextId
-    const nextName = nextId
-      ? (personOptions.find((p) => p.id === nextId)?.displayName ?? null)
-      : null
+  function onPersonChange(_nextId: string, person: PersonRef | null) {
+    const prevName = linkedPersonName
+    const nextName = person?.displayName ?? null
     const label = pendingLabel.trim()
     if (nextName && (!label || label === prevName)) {
       pendingLabel = nextName
-    } else if (!nextId && prevName && label === prevName) {
+    } else if (!nextName && prevName && label === prevName) {
       pendingLabel = ''
     }
+    linkedPersonName = nextName
   }
 
   async function confirmRegion() {
@@ -177,6 +171,7 @@
       showLabelPrompt = false
       pendingLabel = region.label ?? ''
       pendingPersonId = region.person_id ?? ''
+      linkedPersonName = region.person?.displayName ?? null
     } catch (err) {
       loadError = err instanceof Error ? err.message : 'Failed to save box'
     } finally {
@@ -189,6 +184,7 @@
     showLabelPrompt = false
     pendingLabel = ''
     pendingPersonId = ''
+    linkedPersonName = null
   }
 
   async function saveRegionDetails() {
@@ -200,6 +196,9 @@
         person_id: pendingPersonId || null,
       })
       regions = regions.map((r) => (r.id === updated.id ? updated : r))
+      pendingPersonId = updated.person_id ?? ''
+      linkedPersonName = updated.person?.displayName ?? null
+      pendingLabel = updated.label ?? ''
     } catch (err) {
       loadError = err instanceof Error ? err.message : 'Failed to update box'
     } finally {
@@ -258,9 +257,11 @@
       const r = regions.find((x) => x.id === selectedRegionId)
       pendingLabel = r?.label ?? ''
       pendingPersonId = r?.person_id ?? ''
+      linkedPersonName = r?.person?.displayName ?? null
     } else {
       pendingLabel = ''
       pendingPersonId = ''
+      linkedPersonName = null
     }
   }
 
@@ -360,17 +361,12 @@
               {#if canAssociatePerson || selectedRegion.person}
                 <label class="block space-y-1">
                   <span class="text-xs text-muted-foreground">On tree as</span>
-                  <select
-                    class="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-                    value={pendingPersonId}
+                  <PersonSearchInput
+                    options={editPersonOptions}
+                    bind:personId={pendingPersonId}
                     disabled={!canAssociatePerson}
-                    onchange={(e) => onPersonSelectChange(e.currentTarget.value)}
-                  >
-                    <option value="">Not linked</option>
-                    {#each editPersonOptions as person (person.id)}
-                      <option value={person.id}>{person.displayName}</option>
-                    {/each}
-                  </select>
+                    onPersonChange={onPersonChange}
+                  />
                 </label>
               {/if}
               <input
@@ -474,16 +470,11 @@
         {#if canAssociatePerson}
           <label class="mt-3 block space-y-1">
             <span class="text-xs text-muted-foreground">On tree as</span>
-            <select
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              value={pendingPersonId}
-              onchange={(e) => onPersonSelectChange(e.currentTarget.value)}
-            >
-              <option value="">Not linked</option>
-              {#each personOptions as person (person.id)}
-                <option value={person.id}>{person.displayName}</option>
-              {/each}
-            </select>
+            <PersonSearchInput
+              options={personOptions}
+              bind:personId={pendingPersonId}
+              onPersonChange={onPersonChange}
+            />
           </label>
         {/if}
         <input
