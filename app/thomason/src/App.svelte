@@ -53,6 +53,8 @@
   let chartData: Data = []
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let loadGeneration = 0
+  /** Avoid re-bootstrap on TOKEN_REFRESHED (new session object, same user). */
+  let bootstrappedUserId: string | null = null
   let persistedPersonIds = new Set<string>()
   let claimedPersonIds = $state<Set<string>>(new Set())
   let invitesByPersonId = $state<Map<string, PersonInviteRow>>(new Map())
@@ -800,6 +802,7 @@
     if (!authReady) return
 
     if (!session) {
+      bootstrappedUserId = null
       destroyChart()
       revokeAvatarBlobs()
       linkedPerson = null
@@ -809,7 +812,9 @@
     if (!chartEl) return
 
     const userId = session.user.id
-    void userId
+    // Session object is replaced on token refresh / tab focus; only reload for a new user.
+    if (bootstrappedUserId === userId) return
+    bootstrappedUserId = userId
     void bootstrapTree()
   })
 
@@ -964,53 +969,27 @@
   >
     <AlertDialog.Content>
       <AlertDialog.Header>
-        <AlertDialog.Title>Invite to {invitePersonLabel || 'this person'}</AlertDialog.Title>
-        <AlertDialog.Description>
-          Optionally email someone an invite, or create a link they can open, sign in with Google,
-          and join as this person. Links expire in 14 days.
-        </AlertDialog.Description>
+        <AlertDialog.Title>Invite {invitePersonLabel || 'this person'}</AlertDialog.Title>
       </AlertDialog.Header>
 
       {#if inviteQueued}
-        <div class="space-y-3 text-sm">
-          <p>
-            Invitation queued
-            {#if inviteEmail.trim()}
-              for <span class="font-medium">{inviteEmail.trim()}</span>
-            {/if}.
-          </p>
-          <p class="text-muted-foreground">
-            Click <span class="font-medium">Save</span> on this person to create them and send the
-            invite.
-          </p>
-          <p class="text-xs text-muted-foreground">
-            Role: {inviteAsEditor ? 'Editor' : 'Viewer'}
-          </p>
-        </div>
+        <p class="text-sm text-muted-foreground">Queued — click Save to send.</p>
         <AlertDialog.Footer>
           <AlertDialog.Cancel>Done</AlertDialog.Cancel>
         </AlertDialog.Footer>
       {:else if inviteLink}
         <div class="space-y-3">
           {#if inviteEmailedTo}
-            <p class="text-sm text-foreground">
-              Invitation emailed to <span class="font-medium">{inviteEmailedTo}</span>.
-            </p>
+            <p class="text-sm">Sent to <span class="font-medium">{inviteEmailedTo}</span></p>
           {/if}
           {#if inviteError}
             <p class="text-sm text-destructive">{inviteError}</p>
           {/if}
-          <label class="block space-y-1.5 text-sm">
-            <span class="font-medium">Invite link</span>
-            <textarea
-              class="min-h-20 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-xs"
-              readonly
-              value={inviteLink}
-            ></textarea>
-          </label>
-          <p class="text-xs text-muted-foreground">
-            Role: {inviteAsEditor ? 'Editor' : 'Viewer'}
-          </p>
+          <textarea
+            class="min-h-20 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-xs"
+            readonly
+            value={inviteLink}
+          ></textarea>
         </div>
         <AlertDialog.Footer>
           <AlertDialog.Cancel>Done</AlertDialog.Cancel>
@@ -1020,35 +999,25 @@
         </AlertDialog.Footer>
       {:else}
         <div class="space-y-4">
-          {#if invitePersonId && !persistedPersonIds.has(invitePersonId)}
-            <p class="text-sm text-muted-foreground">
-              This person is not saved yet. The invite will be sent when you click Save.
-            </p>
-          {/if}
           <label class="block space-y-1.5 text-sm">
-            <span class="font-medium">Email <span class="font-normal text-muted-foreground">(optional)</span></span>
+            <span class="font-medium">Email</span>
             <input
               type="email"
               class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              placeholder="cousin@example.com"
+              placeholder="Optional"
               autocomplete="email"
               bind:value={inviteEmail}
               disabled={inviteCreating}
             />
           </label>
-          <label class="flex items-start gap-2 text-sm">
+          <label class="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              class="mt-0.5 size-4 rounded border-border"
+              class="size-4 rounded border-border"
               bind:checked={inviteAsEditor}
               disabled={inviteCreating}
             />
-            <span>
-              <span class="font-medium">Editor</span>
-              <span class="block text-muted-foreground">
-                Can edit the whole family tree. Leave unchecked for viewer (own profile only).
-              </span>
-            </span>
+            <span class="font-medium">Editor</span>
           </label>
           {#if inviteError}
             <p class="text-sm text-destructive">{inviteError}</p>
@@ -1058,14 +1027,12 @@
           <AlertDialog.Cancel disabled={inviteCreating}>Cancel</AlertDialog.Cancel>
           <Button disabled={inviteCreating} onclick={confirmCreateInvite}>
             {inviteCreating
-              ? inviteEmail.trim()
-                ? 'Sending…'
-                : 'Creating…'
+              ? 'Working…'
               : invitePersonId && !persistedPersonIds.has(invitePersonId)
-                ? 'Queue invitation'
+                ? 'Queue'
                 : inviteEmail.trim()
-                  ? 'Send invitation'
-                  : 'Create invite link'}
+                  ? 'Send'
+                  : 'Create link'}
           </Button>
         </AlertDialog.Footer>
       {/if}
