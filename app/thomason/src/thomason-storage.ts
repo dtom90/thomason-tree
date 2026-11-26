@@ -61,6 +61,7 @@ export async function sendPersonInviteEmail(opts: {
   to: string
   inviteUrl: string
   personLabel: string
+  personUrl: string
   grantCanEdit: boolean
   inviterName?: string
 }): Promise<void> {
@@ -69,6 +70,7 @@ export async function sendPersonInviteEmail(opts: {
       to: opts.to,
       inviteUrl: opts.inviteUrl,
       personLabel: opts.personLabel,
+      personUrl: opts.personUrl,
       grantCanEdit: opts.grantCanEdit,
       inviterName: opts.inviterName,
     },

@@ -30,6 +30,7 @@
     inviteUrl,
     peekPendingInvite,
   } from './invite'
+  import { getPersonIdFromUrl, setPersonIdInUrl } from './person-url'
   import type { LinkedPerson } from './tree-mapper'
   import type { Chart } from 'family-chart'
 
@@ -101,7 +102,8 @@
   function destroyChart() {
     clearTimeout(persistTimer)
     unmountPersonPhotos()
-    revokeAvatarBlobs()
+    // Do not revoke avatar blobs here — initChart calls destroyChart after
+    // hydrateChartAvatars has already assigned those URLs onto chart data.
     editTree = undefined
     chart = undefined
     chartData = []
@@ -155,7 +157,7 @@
     form: HTMLElement,
     personId: string,
     data: Data,
-    opts: { canUpload: boolean; canSetAvatar: boolean },
+    opts: { editing: boolean; canUpload: boolean; canSetAvatar: boolean },
   ) {
     unmountPersonPhotos()
     form.querySelector('.f3-person-photos-host')?.remove()
@@ -180,6 +182,7 @@
         personId,
         personLabel,
         avatarDriveFileId: avatarDriveByPerson.get(personId) ?? null,
+        editing: opts.editing,
         canUpload: opts.canUpload,
         canSetAvatar: opts.canSetAvatar,
         onAvatarChange: handleAvatarChange,
@@ -294,7 +297,7 @@
 
     const f3Card = f3Chart
       .setCardHtml()
-      .setStyle('imageCircleRect')
+      .setStyle('imageRect')
       .setCardDisplay([['first name', 'last name']])
       .setOnCardUpdate(function (this: HTMLElement, d) {
         if (!centerId || d.data.id !== centerId) return
@@ -310,8 +313,12 @@
         }
       })
 
-    if (centerId && data.some((d) => d.id === centerId)) {
-      f3Chart.updateMainId(centerId)
+    const urlPersonId = getPersonIdFromUrl()
+    const initialPersonId =
+      (urlPersonId && data.some((d) => d.id === urlPersonId) ? urlPersonId : null) ??
+      (centerId && data.some((d) => d.id === centerId) ? centerId : null)
+    if (initialPersonId) {
+      f3Chart.updateMainId(initialPersonId)
     }
 
     const tree = f3Chart
@@ -326,6 +333,7 @@
       .setOnFormCreation(({ cont, form_creator }) => {
         const personId = form_creator.datum_id
         if (!personId || !data.some((d) => d.id === personId)) return
+        setPersonIdInUrl(personId)
         const form = cont.querySelector('.f3-form')
         if (!(form instanceof HTMLElement)) return
         const datum = data.find((d) => d.id === personId)
@@ -341,9 +349,12 @@
           selfEditOnly,
         })
         // Editors: any person. Viewers: only their linked person.
+        // Upload / avatar controls only appear while the sidebar is in edit mode.
+        const editing = !form.classList.contains('non-editable')
         const canManageOwnPhotos =
           treeEditor || (selfEditOnly && !!centerId && personId === centerId)
         injectPersonPhotos(form, personId, data, {
+          editing,
           canUpload: canManageOwnPhotos,
           canSetAvatar: canManageOwnPhotos,
         })
@@ -439,12 +450,14 @@
 
       if (email) {
         try {
+          const personPage = new URL(window.location.origin)
+          personPage.searchParams.set('person', invitePersonId)
           await sendPersonInviteEmail({
             to: email,
             inviteUrl: link,
             personLabel: invitePersonLabel || 'a family member',
+            personUrl: personPage.toString(),
             grantCanEdit: inviteAsEditor,
-            inviterName: session?.user.email ?? undefined,
           })
           inviteEmailedTo = email
         } catch (err) {
@@ -525,6 +538,7 @@
       unsubscribed = true
       subscription.unsubscribe()
       clearTimeout(persistTimer)
+      revokeAvatarBlobs()
     }
   })
 
@@ -533,6 +547,7 @@
 
     if (!session) {
       destroyChart()
+      revokeAvatarBlobs()
       linkedPerson = null
       return
     }
@@ -546,6 +561,7 @@
 
   async function signOut() {
     destroyChart()
+    revokeAvatarBlobs()
     await supabase.auth.signOut()
   }
 </script>

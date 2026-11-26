@@ -19,6 +19,8 @@
     personId: string
     personLabel?: string
     avatarDriveFileId?: string | null
+    /** Mirrors the person sidebar edit/view toggle. */
+    editing?: boolean
     /** Editors: any person. Viewers: only their linked person. */
     canUpload?: boolean
     canSetAvatar?: boolean
@@ -32,10 +34,14 @@
     personId,
     personLabel = '',
     avatarDriveFileId = null,
+    editing = false,
     canUpload = false,
     canSetAvatar = false,
     onAvatarChange,
   }: Props = $props()
+
+  const showUpload = $derived(editing && canUpload)
+  const showSetAvatar = $derived(editing && canSetAvatar)
 
   type GalleryItem = {
     driveFileId: string
@@ -133,7 +139,7 @@
     const input = e.currentTarget as HTMLInputElement
     const file = input.files?.[0]
     input.value = ''
-    if (!file || !canUpload) return
+    if (!file || !showUpload) return
 
     busy = true
     loadError = null
@@ -155,7 +161,7 @@
   }
 
   async function chooseAvatar(item: GalleryItem) {
-    if (!canSetAvatar || busy) return
+    if (!showSetAvatar || busy) return
     busy = true
     loadError = null
     try {
@@ -171,7 +177,7 @@
   }
 
   async function clearAvatar() {
-    if (!canSetAvatar || busy || !selectedAvatarFileId) return
+    if (!showSetAvatar || busy || !selectedAvatarFileId) return
     busy = true
     loadError = null
     try {
@@ -197,7 +203,7 @@
 <div class="f3-person-photos space-y-3 border-t border-border pt-3">
   <div class="flex items-center justify-between gap-2">
     <p class="text-sm font-medium">Photos</p>
-    {#if canUpload}
+    {#if showUpload}
       <Button
         size="sm"
         type="button"
@@ -217,7 +223,7 @@
     {/if}
   </div>
 
-  {#if canSetAvatar && items.length > 0}
+  {#if showSetAvatar && items.length > 0}
     <p class="text-xs text-muted-foreground">
       Click a photo to use it as the profile picture on the tree.
       {#if selectedAvatarFileId}
@@ -236,25 +242,29 @@
   {#if loadError}
     <div class="space-y-2">
       <p class="text-xs text-destructive">{loadError}</p>
-      <div class="flex flex-wrap gap-2">
-        {#if needsFolderPick}
-          <Button size="sm" variant="secondary" type="button" disabled={busy} onclick={connectFamilyFolder}>
-            Select family folder
-          </Button>
-        {/if}
-        {#if needsDriveReconnect}
-          <Button size="sm" variant="secondary" type="button" disabled={busy} onclick={reconnectDrive}>
-            Reconnect Google Drive
-          </Button>
-        {/if}
-      </div>
+      {#if editing}
+        <div class="flex flex-wrap gap-2">
+          {#if needsFolderPick}
+            <Button size="sm" variant="secondary" type="button" disabled={busy} onclick={connectFamilyFolder}>
+              Select family folder
+            </Button>
+          {/if}
+          {#if needsDriveReconnect}
+            <Button size="sm" variant="secondary" type="button" disabled={busy} onclick={reconnectDrive}>
+              Reconnect Google Drive
+            </Button>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 
   {#if items.length === 0 && !loadError}
     <p class="text-xs text-muted-foreground">
-      {#if canUpload}
+      {#if showUpload}
         Upload a photo of {personLabel || 'this person'}
+      {:else if canUpload}
+        Edit to upload photos of {personLabel || 'this person'}
       {:else}
         No photos yet
       {/if}
@@ -263,15 +273,8 @@
     <div class="grid grid-cols-3 gap-2">
       {#each items as item (item.driveFileId)}
         {@const isAvatar = selectedAvatarFileId === item.driveFileId}
-        <button
-          type="button"
-          class="relative aspect-square overflow-hidden rounded-md bg-muted text-left {canSetAvatar
-            ? 'ring-offset-background transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-            : ''} {isAvatar ? 'ring-2 ring-primary' : ''}"
-          disabled={!canSetAvatar || busy}
-          onclick={() => chooseAvatar(item)}
-          title={canSetAvatar ? (isAvatar ? 'Current profile photo' : 'Use as profile photo') : undefined}
-        >
+        {@const tileClass = `relative aspect-square overflow-hidden rounded-md bg-muted ${isAvatar ? 'ring-2 ring-primary' : ''}`}
+        {#snippet tileBody()}
           {#if item.thumbUrl}
             <img src={item.thumbUrl} alt="" class="h-full w-full object-cover" />
           {:else}
@@ -293,7 +296,22 @@
               {item.regionCount} faces
             </span>
           {/if}
-        </button>
+        {/snippet}
+        {#if showSetAvatar}
+          <button
+            type="button"
+            class="{tileClass} text-left ring-offset-background transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            disabled={busy}
+            onclick={() => chooseAvatar(item)}
+            title={isAvatar ? 'Current profile photo' : 'Use as profile photo'}
+          >
+            {@render tileBody()}
+          </button>
+        {:else}
+          <div class={tileClass} title={isAvatar ? 'Profile photo' : undefined}>
+            {@render tileBody()}
+          </div>
+        {/if}
       {/each}
     </div>
   {/if}

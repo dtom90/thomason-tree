@@ -172,6 +172,14 @@ export type Database = {
         Args: { invite_token: string }
         Returns: undefined
       }
+      list_editor_notification_emails: {
+        Args: Record<string, never>
+        Returns: { email: string }[]
+      }
+      my_person_display_name: {
+        Args: Record<string, never>
+        Returns: string | null
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
