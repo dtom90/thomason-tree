@@ -36,6 +36,13 @@
 
   type Tab = 'tree' | 'photos'
 
+  type PendingPersonInvite = {
+    personId: string
+    personLabel: string
+    email: string | null
+    grantCanEdit: boolean
+  }
+
   let chartEl: HTMLDivElement | undefined = $state()
   let session = $state<Session | null>(null)
   let authReady = $state(false)
@@ -46,6 +53,9 @@
   let chartData: Data = []
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let loadGeneration = 0
+  let persistedPersonIds = new Set<string>()
+  let pendingPersonInvites = $state<PendingPersonInvite[]>([])
+  let inviteQueued = $state(false)
   let unlinkOpen = $state(false)
   let unlinking = $state(false)
   let linkOpen = $state(false)
@@ -87,16 +97,125 @@
     if (!linkedPerson) return
     const person = linkedPerson
     clearTimeout(persistTimer)
-    persistTimer = setTimeout(async () => {
-      if (!editTree) return
-      try {
-        const data = editTree.exportData()
-        if (person.can_edit) await saveTree(data)
-        else await saveOwnPerson(data, person.id)
-      } catch (err) {
+    persistTimer = setTimeout(() => {
+      void flushTreePersist(person).catch((err) => {
         console.error('Save failed', err)
-      }
+      })
     }, 400)
+  }
+
+  async function flushTreePersist(person = linkedPerson): Promise<void> {
+    if (!person || !editTree) return
+    clearTimeout(persistTimer)
+    const data = editTree.exportData()
+    if (person.can_edit) {
+      await saveTree(data)
+      for (const row of data) persistedPersonIds.add(row.id)
+      await processPendingPersonInvites()
+    } else {
+      await saveOwnPerson(data, person.id)
+    }
+  }
+
+  function errorMessage(err: unknown, fallback: string): string {
+    if (err && typeof err === 'object' && 'message' in err) {
+      const message = String((err as { message: unknown }).message).trim()
+      if (message) return message
+    }
+    if (err instanceof Error && err.message.trim()) return err.message
+    return fallback
+  }
+
+  function personLabelFromData(personId: string, fallback: string): string {
+    const datum = (editTree?.exportData() ?? chartData).find((d) => d.id === personId)
+    const first = String(datum?.data['first name'] ?? '').trim()
+    const last = String(datum?.data['last name'] ?? '').trim()
+    return `${first} ${last}`.trim() || fallback
+  }
+
+  function queuePendingPersonInvite(invite: PendingPersonInvite): void {
+    pendingPersonInvites = [
+      ...pendingPersonInvites.filter((p) => p.personId !== invite.personId),
+      invite,
+    ]
+  }
+
+  async function createInviteLink(opts: {
+    personId: string
+    email: string | null
+    grantCanEdit: boolean
+  }): Promise<string> {
+    const token = await createPersonInvite(opts.personId, opts.grantCanEdit, opts.email)
+    return inviteUrl(token)
+  }
+
+  async function emailInviteLink(opts: {
+    personId: string
+    personLabel: string
+    email: string
+    grantCanEdit: boolean
+    link: string
+  }): Promise<void> {
+    const personPage = new URL(window.location.origin)
+    personPage.searchParams.set('person', opts.personId)
+    await sendPersonInviteEmail({
+      to: opts.email,
+      inviteUrl: opts.link,
+      personLabel: opts.personLabel,
+      personUrl: personPage.toString(),
+      grantCanEdit: opts.grantCanEdit,
+    })
+  }
+
+  async function processPendingPersonInvites(): Promise<void> {
+    const due = pendingPersonInvites.filter((p) => persistedPersonIds.has(p.personId))
+    if (due.length === 0) return
+
+    pendingPersonInvites = pendingPersonInvites.filter((p) => !persistedPersonIds.has(p.personId))
+
+    for (const invite of due) {
+      const label = personLabelFromData(invite.personId, invite.personLabel)
+      try {
+        const link = await createInviteLink({
+          personId: invite.personId,
+          email: invite.email,
+          grantCanEdit: invite.grantCanEdit,
+        })
+        let emailed = false
+        if (invite.email) {
+          try {
+            await emailInviteLink({
+              personId: invite.personId,
+              personLabel: label,
+              email: invite.email,
+              grantCanEdit: invite.grantCanEdit,
+              link,
+            })
+            emailed = true
+          } catch (err) {
+            console.error('Pending invite email failed', err)
+            redeemNotice = errorMessage(
+              err,
+              `Invite created for ${label}, but the email could not be sent.`,
+            )
+          }
+        }
+        if (inviteOpen && invitePersonId === invite.personId) {
+          inviteLink = link
+          inviteQueued = false
+          inviteEmailedTo = emailed ? invite.email : null
+          invitePersonLabel = label
+        } else if (emailed && invite.email) {
+          redeemNotice = `Invitation sent to ${invite.email} for ${label}.`
+        } else if (!invite.email) {
+          redeemNotice = `Invite link ready for ${label}.`
+        }
+      } catch (err) {
+        console.error('Pending invite failed', err)
+        queuePendingPersonInvite(invite)
+        redeemNotice = errorMessage(err, `Could not send invite for ${label}.`)
+      }
+    }
   }
 
   function destroyChart() {
@@ -247,9 +366,20 @@
     }
 
     if (opts.canInvite) {
+      const pending = pendingPersonInvites.find((p) => p.personId === personId)
       const inviteField = document.createElement('div')
       inviteField.className = 'f3-form-field f3-you-field f3-invite-field'
-      inviteField.innerHTML = `
+      inviteField.innerHTML = pending
+        ? `
+        <label>Invite</label>
+        <div class="f3-you-field-row">
+          <span class="f3-you-field-copy">Invitation pending — click Save to send${
+            pending.email ? ` to ${pending.email}` : ''
+          }</span>
+          <button type="button" class="f3-invite-you-btn">Edit</button>
+        </div>
+      `
+        : `
         <label>Invite</label>
         <div class="f3-you-field-row">
           <span class="f3-you-field-copy">Invite someone to join as this person</span>
@@ -259,11 +389,12 @@
       inviteField.querySelector('.f3-invite-you-btn')?.addEventListener('click', () => {
         invitePersonId = personId
         invitePersonLabel = opts.personLabel
-        inviteAsEditor = false
-        inviteEmail = ''
+        inviteAsEditor = pending?.grantCanEdit ?? false
+        inviteEmail = pending?.email ?? ''
         inviteLink = null
         inviteCopied = false
         inviteEmailedTo = null
+        inviteQueued = false
         inviteError = null
         inviteOpen = true
       })
@@ -413,6 +544,8 @@
       const result = await loadTree()
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
+      persistedPersonIds = new Set(result.people.map((p) => p.id))
+      pendingPersonInvites = []
       avatarDriveByPerson = new Map(
         result.people.map((p) => [p.id, p.avatar_drive_file_id]),
       )
@@ -443,37 +576,50 @@
     inviteError = null
     inviteCopied = false
     inviteEmailedTo = null
+    inviteQueued = false
     try {
-      const token = await createPersonInvite(invitePersonId, inviteAsEditor, email || null)
-      const link = inviteUrl(token)
-      inviteLink = link
+      const personId = invitePersonId
+      const label = invitePersonLabel || 'a family member'
 
+      // New relatives are omitted from export/save until the form Save clears `_new_rel_data`.
+      if (!persistedPersonIds.has(personId)) {
+        queuePendingPersonInvite({
+          personId,
+          personLabel: label,
+          email: email || null,
+          grantCanEdit: inviteAsEditor,
+        })
+        inviteQueued = true
+        return
+      }
+
+      const link = await createInviteLink({
+        personId,
+        email: email || null,
+        grantCanEdit: inviteAsEditor,
+      })
+      inviteLink = link
       if (email) {
         try {
-          const personPage = new URL(window.location.origin)
-          personPage.searchParams.set('person', invitePersonId)
-          await sendPersonInviteEmail({
-            to: email,
-            inviteUrl: link,
-            personLabel: invitePersonLabel || 'a family member',
-            personUrl: personPage.toString(),
+          await emailInviteLink({
+            personId,
+            personLabel: label,
+            email,
             grantCanEdit: inviteAsEditor,
+            link,
           })
           inviteEmailedTo = email
         } catch (err) {
           console.error('Send invite email failed', err)
-          const message =
-            err && typeof err === 'object' && 'message' in err
-              ? String((err as { message: unknown }).message)
-              : String(err)
-          inviteError =
-            message ||
-            'Invite link created, but the email could not be sent. Copy the link below.'
+          inviteError = errorMessage(
+            err,
+            'Invite link created, but the email could not be sent. Copy the link below.',
+          )
         }
       }
     } catch (err) {
       console.error('Create invite failed', err)
-      inviteError = err instanceof Error ? err.message : 'Could not create invite'
+      inviteError = errorMessage(err, 'Could not create invite')
     } finally {
       inviteCreating = false
     }
@@ -677,6 +823,7 @@
         inviteLink = null
         inviteCopied = false
         inviteEmailedTo = null
+        inviteQueued = false
         inviteError = null
         inviteAsEditor = false
         inviteEmail = ''
@@ -692,7 +839,26 @@
         </AlertDialog.Description>
       </AlertDialog.Header>
 
-      {#if inviteLink}
+      {#if inviteQueued}
+        <div class="space-y-3 text-sm">
+          <p>
+            Invitation queued
+            {#if inviteEmail.trim()}
+              for <span class="font-medium">{inviteEmail.trim()}</span>
+            {/if}.
+          </p>
+          <p class="text-muted-foreground">
+            Click <span class="font-medium">Save</span> on this person to create them and send the
+            invite.
+          </p>
+          <p class="text-xs text-muted-foreground">
+            Role: {inviteAsEditor ? 'Editor' : 'Viewer'}
+          </p>
+        </div>
+        <AlertDialog.Footer>
+          <AlertDialog.Cancel>Done</AlertDialog.Cancel>
+        </AlertDialog.Footer>
+      {:else if inviteLink}
         <div class="space-y-3">
           {#if inviteEmailedTo}
             <p class="text-sm text-foreground">
@@ -722,6 +888,11 @@
         </AlertDialog.Footer>
       {:else}
         <div class="space-y-4">
+          {#if invitePersonId && !persistedPersonIds.has(invitePersonId)}
+            <p class="text-sm text-muted-foreground">
+              This person is not saved yet. The invite will be sent when you click Save.
+            </p>
+          {/if}
           <label class="block space-y-1.5 text-sm">
             <span class="font-medium">Email <span class="font-normal text-muted-foreground">(optional)</span></span>
             <input
@@ -758,9 +929,11 @@
               ? inviteEmail.trim()
                 ? 'Sending…'
                 : 'Creating…'
-              : inviteEmail.trim()
-                ? 'Send invitation'
-                : 'Create invite link'}
+              : invitePersonId && !persistedPersonIds.has(invitePersonId)
+                ? 'Queue invitation'
+                : inviteEmail.trim()
+                  ? 'Send invitation'
+                  : 'Create invite link'}
           </Button>
         </AlertDialog.Footer>
       {/if}
