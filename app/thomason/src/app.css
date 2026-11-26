@@ -148,3 +148,76 @@
   background: var(--card);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 10%, transparent);
 }
+
+.f3.chart-root .card-you .card-inner {
+  position: relative;
+  outline: 3px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.f3.chart-root .card-you-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  border-radius: 9999px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 3px 6px;
+  pointer-events: none;
+}
+
+.f3.chart-root .f3-form-you-badge {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.f3.chart-root .f3-you-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--f3-form-border);
+}
+
+.f3.chart-root .f3-you-field-copy {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.f3.chart-root .f3-unlink-you-btn,
+.f3.chart-root .f3-link-you-btn {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--f3-form-border);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.f3.chart-root .f3-unlink-you-btn {
+  color: var(--destructive);
+}
+
+.f3.chart-root .f3-unlink-you-btn:hover {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+}
+
+.f3.chart-root .f3-link-you-btn {
+  color: var(--foreground);
+}
+
+.f3.chart-root .f3-link-you-btn:hover {
+  background: var(--f3-form-soft-strong);
+}

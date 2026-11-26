@@ -17,6 +17,7 @@ declare module 'family-chart' {
 
   export class CardHtml {
     setCardDisplay(fields: string[][]): CardHtml
+    setOnCardUpdate(fn: (this: HTMLElement, d: { data: Datum }) => void): CardHtml
   }
 
   export class EditTree {
@@ -28,6 +29,9 @@ declare module 'family-chart' {
     setNoEdit(): EditTree
     setCardClickOpen(card: CardHtml): EditTree
     setOnChange(fn: () => void): EditTree
+    setOnFormCreation(
+      fn: (props: { cont: HTMLElement; form_creator: { datum_id: string } }) => void,
+    ): EditTree
   }
 
   export class Chart {

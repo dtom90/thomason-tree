@@ -5,12 +5,14 @@
   import NetworkIcon from '@lucide/svelte/icons/network'
   import f3, { type Data, type EditTree } from 'family-chart'
   import type { Session } from '@supabase/supabase-js'
+  import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
+  import { Button } from '$lib/components/ui/button/index.js'
   import AccountMenu from '$lib/components/AccountMenu.svelte'
   import ThemeToggle from '$lib/components/ThemeToggle.svelte'
   import { supabase } from '$lib/supabase'
   import AuthForm from './AuthForm.svelte'
   import DriveBrowser from './DriveBrowser.svelte'
-  import { loadTree, saveTree } from './thomason-storage'
+  import { loadTree, saveTree, linkMyPerson, unlinkMyPerson } from './thomason-storage'
   import type { LinkedPerson } from './tree-mapper'
 
   type Tab = 'tree' | 'photos'
@@ -23,6 +25,11 @@
   let editTree: EditTree | undefined
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let loadGeneration = 0
+  let unlinkOpen = $state(false)
+  let unlinking = $state(false)
+  let linkOpen = $state(false)
+  let linkPersonId = $state<string | null>(null)
+  let linking = $state(false)
 
   const canEdit = $derived(linkedPerson?.can_edit === true)
 
@@ -45,7 +52,61 @@
     if (chartEl) chartEl.innerHTML = ''
   }
 
-  function initChart(data: Data, centerId: string | null, editable: boolean) {
+  function injectAccountLinkField(
+    form: HTMLElement,
+    personId: string,
+    opts: { isMe: boolean; canClaim: boolean; editable: boolean },
+  ) {
+    if (form.querySelector('.f3-you-field')) return
+    if (!opts.isMe && !opts.canClaim) return
+
+    const fields = form.querySelector('.f3-form-fields')
+    if (!fields) return
+
+    const field = document.createElement('div')
+    field.className = opts.editable ? 'f3-form-field f3-you-field' : 'f3-info-field f3-you-field'
+
+    if (opts.isMe && opts.editable) {
+      field.innerHTML = `
+        <label>You</label>
+        <div class="f3-you-field-row">
+          <span class="f3-you-field-copy">Your account is linked to this person</span>
+          <button type="button" class="f3-unlink-you-btn">Unlink</button>
+        </div>
+      `
+      field.querySelector('.f3-unlink-you-btn')?.addEventListener('click', () => {
+        unlinkOpen = true
+      })
+    } else if (opts.isMe) {
+      field.innerHTML = `
+        <span class="f3-info-field-label">You</span>
+        <span class="f3-info-field-value">
+          <span class="card-you-badge f3-form-you-badge">You</span>
+        </span>
+      `
+    } else {
+      field.innerHTML = `
+        <label>You</label>
+        <div class="f3-you-field-row">
+          <span class="f3-you-field-copy">Link this person to your account</span>
+          <button type="button" class="f3-link-you-btn">Link</button>
+        </div>
+      `
+      field.querySelector('.f3-link-you-btn')?.addEventListener('click', () => {
+        linkPersonId = personId
+        linkOpen = true
+      })
+    }
+
+    fields.appendChild(field)
+  }
+
+  function initChart(
+    data: Data,
+    centerId: string | null,
+    editable: boolean,
+    claimedIds: Set<string>,
+  ) {
     if (!chartEl) return
     destroyChart()
 
@@ -55,9 +116,22 @@
       .setCardXSpacing(250)
       .setCardYSpacing(150)
 
-    const f3Card = f3Chart.setCardHtml().setCardDisplay([
-      ['first name', 'last name'],
-    ])
+    const f3Card = f3Chart
+      .setCardHtml()
+      .setCardDisplay([['first name', 'last name']])
+      .setOnCardUpdate(function (this: HTMLElement, d) {
+        if (!centerId || d.data.id !== centerId) return
+        const card = this.querySelector('.card')
+        if (!card) return
+        card.classList.add('card-you')
+        const inner = card.querySelector('.card-inner')
+        if (inner && !inner.querySelector('.card-you-badge')) {
+          const badge = document.createElement('div')
+          badge.className = 'card-you-badge'
+          badge.textContent = 'You'
+          inner.appendChild(badge)
+        }
+      })
 
     if (centerId && data.some((d) => d.id === centerId)) {
       f3Chart.updateMainId(centerId)
@@ -72,6 +146,17 @@
       ])
       .setEditFirst(false)
       .setCardClickOpen(f3Card)
+      .setOnFormCreation(({ cont, form_creator }) => {
+        const personId = form_creator.datum_id
+        if (!personId || !data.some((d) => d.id === personId)) return
+        const form = cont.querySelector('.f3-form')
+        if (!form) return
+        injectAccountLinkField(form, personId, {
+          isMe: centerId === personId,
+          canClaim: !centerId && !claimedIds.has(personId),
+          editable: !form.classList.contains('non-editable'),
+        })
+      })
 
     if (editable) {
       tree.setOnChange(() => schedulePersist())
@@ -93,10 +178,43 @@
       const result = await loadTree()
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
-      initChart(result.data, result.linkedPerson?.id ?? null, result.linkedPerson?.can_edit === true)
+      initChart(
+        result.data,
+        result.linkedPerson?.id ?? null,
+        result.linkedPerson?.can_edit === true,
+        result.claimedPersonIds,
+      )
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
+    }
+  }
+
+  async function confirmUnlink() {
+    unlinking = true
+    try {
+      await unlinkMyPerson()
+      unlinkOpen = false
+      await bootstrapTree()
+    } catch (err) {
+      console.error('Unlink failed', err)
+    } finally {
+      unlinking = false
+    }
+  }
+
+  async function confirmLink() {
+    if (!linkPersonId) return
+    linking = true
+    try {
+      await linkMyPerson(linkPersonId)
+      linkOpen = false
+      linkPersonId = null
+      await bootstrapTree()
+    } catch (err) {
+      console.error('Link failed', err)
+    } finally {
+      linking = false
     }
   }
 
@@ -207,4 +325,43 @@
       {/if}
     </main>
   </div>
+
+  <AlertDialog.Root bind:open={unlinkOpen}>
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>Unlink this person?</AlertDialog.Title>
+        <AlertDialog.Description>
+          Your account will no longer be linked to this person. You can be linked again later.
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel disabled={unlinking}>Cancel</AlertDialog.Cancel>
+        <Button variant="destructive" disabled={unlinking} onclick={confirmUnlink}>
+          {unlinking ? 'Unlinking…' : 'Unlink'}
+        </Button>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
+
+  <AlertDialog.Root
+    bind:open={linkOpen}
+    onOpenChange={(open) => {
+      if (!open) linkPersonId = null
+    }}
+  >
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>Link this person?</AlertDialog.Title>
+        <AlertDialog.Description>
+          Your account will be linked to this person so the tree can treat them as you.
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel disabled={linking}>Cancel</AlertDialog.Cancel>
+        <Button disabled={linking} onclick={confirmLink}>
+          {linking ? 'Linking…' : 'Link'}
+        </Button>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
 {/if}

@@ -6,6 +6,8 @@ import { fromChartData, toChartData, type LinkedPerson } from './tree-mapper'
 export type TreeLoadResult = {
   data: Data
   linkedPerson: LinkedPerson | null
+  /** Person ids that already have a user_id linked. */
+  claimedPersonIds: Set<string>
 }
 
 export async function getCurrentPerson(): Promise<LinkedPerson | null> {
@@ -25,6 +27,18 @@ export async function getCurrentPerson(): Promise<LinkedPerson | null> {
   return { id: data.id, can_edit: data.can_edit }
 }
 
+/** Clears people.user_id for the signed-in user. */
+export async function unlinkMyPerson(): Promise<void> {
+  const { error } = await supabase.rpc('unlink_my_person')
+  if (error) throw error
+}
+
+/** Links the signed-in user to an unclaimed person. */
+export async function linkMyPerson(personId: string): Promise<void> {
+  const { error } = await supabase.rpc('link_my_person', { target_person_id: personId })
+  if (error) throw error
+}
+
 export async function loadTree(): Promise<TreeLoadResult> {
   const [peopleRes, relsRes, linkedPerson] = await Promise.all([
     supabase.from('people').select('*'),
@@ -37,10 +51,14 @@ export async function loadTree(): Promise<TreeLoadResult> {
 
   const people = (peopleRes.data ?? []) as PersonRow[]
   const relationships = relsRes.data ?? []
+  const claimedPersonIds = new Set(
+    people.filter((p) => p.user_id != null).map((p) => p.id),
+  )
 
   return {
     data: toChartData(people, relationships),
     linkedPerson,
+    claimedPersonIds,
   }
 }
 

@@ -143,6 +143,14 @@ export type Database = {
         Args: Record<string, never>
         Returns: boolean
       }
+      unlink_my_person: {
+        Args: Record<string, never>
+        Returns: undefined
+      }
+      link_my_person: {
+        Args: { target_person_id: string }
+        Returns: undefined
+      }
     }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
