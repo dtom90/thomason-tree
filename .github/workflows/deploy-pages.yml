@@ -45,6 +45,10 @@ jobs:
             echo "::error::Set repository secret VITE_GOOGLE_API_KEY for Google Picker uploads."
             exit 1
           fi
+          if [ -z "$VITE_GOOGLE_APP_ID" ]; then
+            echo "::error::Set repository secret VITE_GOOGLE_APP_ID to your Google Cloud project number (required for drive.file Picker grants)."
+            exit 1
+          fi
           yarn build
 
       - name: Add .nojekyll

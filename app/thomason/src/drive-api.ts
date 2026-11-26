@@ -1,7 +1,7 @@
 import { supabase } from './lib/supabase'
 import type { PhotoCommentRow, PhotoRegionRow } from './lib/database.types'
 import { getGoogleProviderToken } from './google-auth'
-import { canAccessDriveFolder, pickFamilyRootFolder } from './google-picker'
+import { canAccessDriveFolder, pickFamilyRootFolder, probeDriveFolderAccess } from './google-picker'
 
 const functionsBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -143,9 +143,17 @@ export async function ensureFamilyFolderAccess(): Promise<string> {
     parentId: root.parents[0] ?? null,
   })
 
-  if (!(await canAccessDriveFolder(token, root.folderId))) {
+  // Picker grant can lag briefly; retry a few times before failing.
+  let last = await probeDriveFolderAccess(token, root.folderId)
+  for (let i = 0; i < 4 && !last.ok; i++) {
+    await new Promise((r) => setTimeout(r, 400 * (i + 1)))
+    last = await probeDriveFolderAccess(token, root.folderId)
+  }
+  if (!last.ok) {
     throw new Error(
-      'Could not access the family folder after selection. Try Reconnect Google Drive, then select the shared folder again.',
+      `Could not access the family folder after selection (${last.status}). ` +
+        `Confirm VITE_GOOGLE_APP_ID is your Google Cloud project number, reconnect Google Drive, ` +
+        `and select the shared folder again. ${last.detail}`,
     )
   }
   return token

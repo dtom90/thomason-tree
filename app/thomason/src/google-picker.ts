@@ -40,14 +40,20 @@ type GooglePickerBuilder = {
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 
-function getPickerConfig(): { apiKey: string; appId: string | null } {
+function getPickerConfig(): { apiKey: string; appId: string } {
   const apiKey = (import.meta.env.VITE_GOOGLE_API_KEY as string | undefined)?.trim()
   if (!apiKey) {
     throw new Error(
       'Missing VITE_GOOGLE_API_KEY. Add a Google Cloud API key (Picker enabled) to .env.local.',
     )
   }
-  const appId = (import.meta.env.VITE_GOOGLE_APP_ID as string | undefined)?.trim() || null
+  // Project number is required for drive.file: without it, Picker selection does not grant access.
+  const appId = (import.meta.env.VITE_GOOGLE_APP_ID as string | undefined)?.trim()
+  if (!appId) {
+    throw new Error(
+      'Missing VITE_GOOGLE_APP_ID. Set it to your Google Cloud project number (Console → Home → Project number).',
+    )
+  }
   return { apiKey, appId }
 }
 
@@ -179,20 +185,40 @@ export async function pickFamilyRootFolder(
       })
 
     for (const view of views) builder = builder.addView(view)
-    if (appId) builder = builder.setAppId(appId)
+    builder = builder.setAppId(appId)
 
     builder.build().setVisible(true)
   })
 }
 
-/** True if the user token can already see the family root (drive.file granted). */
+export type DriveFolderAccess = {
+  ok: boolean
+  status: number
+  detail: string
+}
+
+/** Check whether the user token can see the family root (drive.file granted). */
+export async function probeDriveFolderAccess(
+  accessToken: string,
+  folderId: string,
+): Promise<DriveFolderAccess> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (res.ok) return { ok: true, status: res.status, detail: 'ok' }
+  let detail = res.statusText
+  try {
+    detail = await res.text()
+  } catch {
+    /* ignore */
+  }
+  return { ok: false, status: res.status, detail: detail.slice(0, 300) }
+}
+
 export async function canAccessDriveFolder(
   accessToken: string,
   folderId: string,
 ): Promise<boolean> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id&supportsAllDrives=true`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  )
-  return res.ok
+  return (await probeDriveFolderAccess(accessToken, folderId)).ok
 }
