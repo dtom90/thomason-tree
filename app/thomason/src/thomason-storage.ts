@@ -1,6 +1,6 @@
 import type { Data } from 'family-chart'
 import { supabase } from './lib/supabase'
-import type { PersonRow } from './lib/database.types'
+import type { PersonInviteRow, PersonRow } from './lib/database.types'
 import { fromChartData, toChartData, type LinkedPerson } from './tree-mapper'
 
 export type TreeLoadResult = {
@@ -9,6 +9,8 @@ export type TreeLoadResult = {
   /** Person ids that already have a user_id linked. */
   claimedPersonIds: Set<string>
   people: PersonRow[]
+  /** Latest invite per person (by created_at), when the viewer can read invites. */
+  invitesByPersonId: Map<string, PersonInviteRow>
 }
 
 export async function getCurrentPerson(): Promise<LinkedPerson | null> {
@@ -102,6 +104,32 @@ export async function redeemPersonInvite(token: string): Promise<void> {
   if (error) throw error
 }
 
+/** Latest invite row per person_id (most recently created). */
+export function indexLatestInvites(rows: PersonInviteRow[]): Map<string, PersonInviteRow> {
+  const byPerson = new Map<string, PersonInviteRow>()
+  const sorted = [...rows].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+  for (const row of sorted) {
+    if (!byPerson.has(row.person_id)) byPerson.set(row.person_id, row)
+  }
+  return byPerson
+}
+
+export async function loadPersonInvites(): Promise<Map<string, PersonInviteRow>> {
+  const { data, error } = await supabase
+    .from('person_invites')
+    .select('id, person_id, email, grant_can_edit, created_at, expires_at, redeemed_at')
+    .order('created_at', { ascending: false })
+
+  // Non-editors get RLS denial — treat as no visible invites.
+  if (error) {
+    if (/permission|policy|rls/i.test(error.message)) return new Map()
+    throw error
+  }
+  return indexLatestInvites((data ?? []) as PersonInviteRow[])
+}
+
 export async function loadTree(): Promise<TreeLoadResult> {
   const [peopleRes, relsRes, linkedPerson] = await Promise.all([
     supabase.from('people').select('*'),
@@ -118,11 +146,15 @@ export async function loadTree(): Promise<TreeLoadResult> {
     people.filter((p) => p.user_id != null).map((p) => p.id),
   )
 
+  const invitesByPersonId =
+    linkedPerson?.can_edit === true ? await loadPersonInvites() : new Map<string, PersonInviteRow>()
+
   return {
     data: toChartData(people, relationships),
     linkedPerson,
     claimedPersonIds,
     people,
+    invitesByPersonId,
   }
 }
 

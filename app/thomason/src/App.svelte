@@ -16,6 +16,7 @@
   import { hydrateChartAvatars, loadAvatarRefs, resolveAvatarUrl } from './avatar'
   import {
     createPersonInvite,
+    loadPersonInvites,
     loadTree,
     saveOwnPerson,
     saveTree,
@@ -30,18 +31,18 @@
     inviteUrl,
     peekPendingInvite,
   } from './invite'
+  import {
+    inviteStatusActionLabel,
+    inviteStatusCopy,
+    resolvePersonInviteStatus,
+    type PendingPersonInvite,
+  } from './invite-status'
+  import type { PersonInviteRow } from './lib/database.types'
   import { getPersonIdFromUrl, setPersonIdInUrl } from './person-url'
   import type { LinkedPerson } from './tree-mapper'
   import type { Chart } from 'family-chart'
 
   type Tab = 'tree' | 'photos'
-
-  type PendingPersonInvite = {
-    personId: string
-    personLabel: string
-    email: string | null
-    grantCanEdit: boolean
-  }
 
   let chartEl: HTMLDivElement | undefined = $state()
   let session = $state<Session | null>(null)
@@ -54,6 +55,8 @@
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let loadGeneration = 0
   let persistedPersonIds = new Set<string>()
+  let claimedPersonIds = $state<Set<string>>(new Set())
+  let invitesByPersonId = $state<Map<string, PersonInviteRow>>(new Map())
   let pendingPersonInvites = $state<PendingPersonInvite[]>([])
   let inviteQueued = $state(false)
   let unlinkOpen = $state(false)
@@ -210,10 +213,13 @@
         } else if (!invite.email) {
           redeemNotice = `Invite link ready for ${label}.`
         }
+        await refreshInviteStatuses()
+        refreshOpenInviteField(invite.personId)
       } catch (err) {
         console.error('Pending invite failed', err)
         queuePendingPersonInvite(invite)
         redeemNotice = errorMessage(err, `Could not send invite for ${label}.`)
+        refreshOpenInviteField(invite.personId)
       }
     }
   }
@@ -309,6 +315,91 @@
     })
   }
 
+  function personInviteStatusFor(personId: string) {
+    return resolvePersonInviteStatus({
+      personId,
+      claimed: claimedPersonIds.has(personId),
+      queued: pendingPersonInvites.find((p) => p.personId === personId),
+      latestInvite: invitesByPersonId.get(personId),
+    })
+  }
+
+  function escapeInviteHtml(value: string): string {
+    return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+  }
+
+  function renderInviteField(
+    form: HTMLElement,
+    fields: Element,
+    personId: string,
+    personLabel: string,
+  ) {
+    const status = personInviteStatusFor(personId)
+    const action = inviteStatusActionLabel(status)
+    const copy = escapeInviteHtml(inviteStatusCopy(status))
+
+    let inviteField = form.querySelector('.f3-invite-field')
+    if (!(inviteField instanceof HTMLElement)) {
+      inviteField = document.createElement('div')
+      inviteField.className = 'f3-form-field f3-invite-field'
+      fields.appendChild(inviteField)
+    }
+
+    inviteField.innerHTML = `
+      <label>Invite</label>
+      <div class="f3-you-field-row">
+        <span class="f3-you-field-copy">${copy}</span>
+        ${
+          action
+            ? `<button type="button" class="f3-invite-you-btn">${escapeInviteHtml(action)}</button>`
+            : ''
+        }
+      </div>
+    `
+
+    inviteField.querySelector('.f3-invite-you-btn')?.addEventListener('click', () => {
+      const queued = pendingPersonInvites.find((p) => p.personId === personId)
+      const latest = invitesByPersonId.get(personId)
+      invitePersonId = personId
+      invitePersonLabel = personLabel
+      inviteAsEditor = queued?.grantCanEdit ?? latest?.grant_can_edit ?? false
+      inviteEmail = queued?.email ?? latest?.email ?? ''
+      inviteLink = null
+      inviteCopied = false
+      inviteEmailedTo = null
+      // Prefill from queue/latest; show the form so Edit can change email/role.
+      inviteQueued = false
+      inviteError = null
+      inviteOpen = true
+    })
+  }
+
+  function refreshOpenInviteField(personId: string) {
+    const form = chartEl?.querySelector('.f3-form')
+    const fields = form?.querySelector('.f3-form-fields')
+    if (!(form instanceof HTMLElement) || !fields) return
+    if (!form.querySelector('.f3-invite-field') && !canEditTree) return
+    const datum = chartData.find((d) => d.id === personId)
+    const first = String(datum?.data['first name'] ?? '').trim()
+    const last = String(datum?.data['last name'] ?? '').trim()
+    const personLabel = `${first} ${last}`.trim() || 'this person'
+    if (canEditTree && linkedPerson?.id !== personId) {
+      renderInviteField(form, fields, personId, personLabel)
+    }
+  }
+
+  async function refreshInviteStatuses() {
+    if (!canEditTree) {
+      invitesByPersonId = new Map()
+      return
+    }
+    invitesByPersonId = await loadPersonInvites()
+  }
+
   function injectAccountLinkField(
     form: HTMLElement,
     personId: string,
@@ -321,14 +412,14 @@
       selfEditOnly: boolean
     },
   ) {
-    if (form.querySelector('.f3-you-field')) return
-
     const fields = form.querySelector('.f3-form-fields')
     if (!fields) return
 
-    if (opts.isMe || opts.canClaim) {
+    if ((opts.isMe || opts.canClaim) && !form.querySelector('.f3-account-link-field')) {
       const field = document.createElement('div')
-      field.className = opts.editable ? 'f3-form-field f3-you-field' : 'f3-info-field f3-you-field'
+      field.className = opts.editable
+        ? 'f3-form-field f3-you-field f3-account-link-field'
+        : 'f3-info-field f3-you-field f3-account-link-field'
 
       if (opts.isMe && opts.editable) {
         field.innerHTML = `
@@ -366,39 +457,7 @@
     }
 
     if (opts.canInvite) {
-      const pending = pendingPersonInvites.find((p) => p.personId === personId)
-      const inviteField = document.createElement('div')
-      inviteField.className = 'f3-form-field f3-you-field f3-invite-field'
-      inviteField.innerHTML = pending
-        ? `
-        <label>Invite</label>
-        <div class="f3-you-field-row">
-          <span class="f3-you-field-copy">Invitation pending — click Save to send${
-            pending.email ? ` to ${pending.email}` : ''
-          }</span>
-          <button type="button" class="f3-invite-you-btn">Edit</button>
-        </div>
-      `
-        : `
-        <label>Invite</label>
-        <div class="f3-you-field-row">
-          <span class="f3-you-field-copy">Invite someone to join as this person</span>
-          <button type="button" class="f3-invite-you-btn">Invite</button>
-        </div>
-      `
-      inviteField.querySelector('.f3-invite-you-btn')?.addEventListener('click', () => {
-        invitePersonId = personId
-        invitePersonLabel = opts.personLabel
-        inviteAsEditor = pending?.grantCanEdit ?? false
-        inviteEmail = pending?.email ?? ''
-        inviteLink = null
-        inviteCopied = false
-        inviteEmailedTo = null
-        inviteQueued = false
-        inviteError = null
-        inviteOpen = true
-      })
-      fields.appendChild(inviteField)
+      renderInviteField(form, fields, personId, opts.personLabel)
     }
 
     if (opts.selfEditOnly) {
@@ -410,7 +469,6 @@
   function initChart(
     data: Data,
     linked: LinkedPerson | null,
-    claimedIds: Set<string>,
   ) {
     if (!chartEl) return
     destroyChart()
@@ -463,7 +521,7 @@
       .setCardClickOpen(f3Card)
       .setOnFormCreation(({ cont, form_creator }) => {
         const personId = form_creator.datum_id
-        if (!personId || !data.some((d) => d.id === personId)) return
+        if (!personId) return
         setPersonIdInUrl(personId)
         const form = cont.querySelector('.f3-form')
         if (!(form instanceof HTMLElement)) return
@@ -471,19 +529,22 @@
         const first = String(datum?.data['first name'] ?? '').trim()
         const last = String(datum?.data['last name'] ?? '').trim()
         const personLabel = `${first} ${last}`.trim() || 'this person'
+        const isMe = linkedPerson?.id === personId
+        const claimed = claimedPersonIds.has(personId)
         injectAccountLinkField(form, personId, {
-          isMe: centerId === personId,
-          canClaim: !centerId && !claimedIds.has(personId),
-          canInvite: treeEditor && !claimedIds.has(personId) && centerId !== personId,
+          isMe,
+          canClaim: linkedPerson == null && !claimed,
+          // Editors see invite status for everyone except themselves (including joined).
+          canInvite: canEditTree && !isMe,
           personLabel,
           editable: !form.classList.contains('non-editable'),
-          selfEditOnly,
+          selfEditOnly: linkedPerson != null && !canEditTree,
         })
         // Editors: any person. Viewers: only their linked person.
         // Upload / avatar controls only appear while the sidebar is in edit mode.
         const editing = !form.classList.contains('non-editable')
         const canManageOwnPhotos =
-          treeEditor || (selfEditOnly && !!centerId && personId === centerId)
+          canEditTree || (linkedPerson != null && !canEditTree && isMe)
         injectPersonPhotos(form, personId, data, {
           editing,
           canUpload: canManageOwnPhotos,
@@ -545,6 +606,8 @@
       if (generation !== loadGeneration) return
       linkedPerson = result.linkedPerson
       persistedPersonIds = new Set(result.people.map((p) => p.id))
+      claimedPersonIds = result.claimedPersonIds
+      invitesByPersonId = result.invitesByPersonId
       pendingPersonInvites = []
       avatarDriveByPerson = new Map(
         result.people.map((p) => [p.id, p.avatar_drive_file_id]),
@@ -557,7 +620,7 @@
         revokeAvatarBlobs()
         return
       }
-      initChart(result.data, result.linkedPerson, result.claimedPersonIds)
+      initChart(result.data, result.linkedPerson)
     } catch (err) {
       if (generation !== loadGeneration) return
       console.error('Failed to load tree', err)
@@ -569,6 +632,10 @@
     const email = inviteEmail.trim()
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       inviteError = 'Enter a valid email address, or leave it blank for a link only.'
+      return
+    }
+    if (claimedPersonIds.has(invitePersonId)) {
+      inviteError = 'This person is already linked to an account.'
       return
     }
 
@@ -590,6 +657,7 @@
           grantCanEdit: inviteAsEditor,
         })
         inviteQueued = true
+        refreshOpenInviteField(personId)
         return
       }
 
@@ -617,6 +685,8 @@
           )
         }
       }
+      await refreshInviteStatuses()
+      refreshOpenInviteField(personId)
     } catch (err) {
       console.error('Create invite failed', err)
       inviteError = errorMessage(err, 'Could not create invite')

@@ -19,6 +19,16 @@ export type PersonRow = {
   updated_at: string
 }
 
+export type PersonInviteRow = {
+  id: string
+  person_id: string
+  email: string | null
+  grant_can_edit: boolean
+  created_at: string
+  expires_at: string
+  redeemed_at: string | null
+}
+
 export type RelationshipRow = {
   id: string
   person_id: string
@@ -91,6 +101,32 @@ export type Database = {
         Row: RelationshipRow
         Insert: RelationshipInsert & { id?: string }
         Update: Partial<RelationshipInsert> & { id?: string }
+        Relationships: []
+      }
+      person_invites: {
+        Row: PersonInviteRow & {
+          token_hash: string
+          created_by: string
+          redeemed_by: string | null
+        }
+        Insert: {
+          id?: string
+          person_id: string
+          token_hash: string
+          grant_can_edit?: boolean
+          created_by: string
+          email?: string | null
+          created_at?: string
+          expires_at?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
+        Update: {
+          email?: string | null
+          grant_can_edit?: boolean
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
         Relationships: []
       }
       photo_regions: {
