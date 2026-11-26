@@ -40,6 +40,7 @@
   } from './invite-status'
   import type { PersonInviteRow } from './lib/database.types'
   import { getPersonIdFromUrl, setPersonIdInUrl } from './person-url'
+  import { getPhotosViewFromUrl, setPhotosViewInUrl } from './photos-url'
   import type { LinkedPerson } from './tree-mapper'
   import type { Chart } from 'family-chart'
 
@@ -48,7 +49,7 @@
   let chartEl: HTMLDivElement | undefined = $state()
   let session = $state<Session | null>(null)
   let authReady = $state(false)
-  let activeTab = $state<Tab>('tree')
+  let activeTab = $state<Tab>(getPhotosViewFromUrl() ? 'photos' : 'tree')
   let linkedPerson = $state<LinkedPerson | null>(null)
   let editTree: EditTree | undefined
   let chart: Chart | undefined
@@ -90,6 +91,11 @@
   let avatarDriveByPerson = $state<Map<string, string | null>>(new Map())
 
   const canEditTree = $derived(linkedPerson?.can_edit === true)
+
+  function selectTab(tab: Tab) {
+    activeTab = tab
+    setPhotosViewInUrl(tab === 'photos')
+  }
 
   function unmountPersonPhotos() {
     if (!personPhotosMount) return
@@ -855,9 +861,15 @@
       authReady = true
     })
 
+    const onPopState = () => {
+      activeTab = getPhotosViewFromUrl() ? 'photos' : 'tree'
+    }
+    window.addEventListener('popstate', onPopState)
+
     return () => {
       unsubscribed = true
       subscription.unsubscribe()
+      window.removeEventListener('popstate', onPopState)
       clearTimeout(persistTimer)
       revokeAvatarBlobs()
     }
@@ -918,7 +930,7 @@
           'tree'
             ? 'border-foreground text-foreground'
             : 'border-transparent text-muted-foreground hover:text-foreground'}"
-          onclick={() => (activeTab = 'tree')}
+          onclick={() => selectTab('tree')}
         >
           <NetworkIcon class="size-3.5" />
           Family tree
@@ -931,7 +943,7 @@
           'photos'
             ? 'border-foreground text-foreground'
             : 'border-transparent text-muted-foreground hover:text-foreground'}"
-          onclick={() => (activeTab = 'photos')}
+          onclick={() => selectTab('photos')}
         >
           <ImagesIcon class="size-3.5" />
           Photos

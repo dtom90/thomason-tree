@@ -9,6 +9,7 @@
     type DriveItem,
     type DriveListResult,
   } from './drive-api'
+  import { getPhotoIdFromUrl, setPhotoIdInUrl } from './photos-url'
   import PhotoViewer from './PhotoViewer.svelte'
 
   type Crumb = { id: string; name: string }
@@ -19,6 +20,33 @@
   let crumbs = $state<Crumb[]>([])
   let thumbUrls = $state<Record<string, string>>({})
   let viewer = $state<{ id: string; name: string } | null>(null)
+
+  function nameForPhoto(photoId: string): string {
+    return listing?.items.find((i) => i.id === photoId)?.name ?? 'Photo'
+  }
+
+  function syncViewerFromUrl() {
+    const photoId = getPhotoIdFromUrl()
+    if (!photoId) {
+      viewer = null
+      return
+    }
+    if (viewer?.id === photoId) {
+      if (viewer.name === 'Photo') viewer = { id: photoId, name: nameForPhoto(photoId) }
+      return
+    }
+    viewer = { id: photoId, name: nameForPhoto(photoId) }
+  }
+
+  function openPhoto(item: DriveItem) {
+    viewer = { id: item.id, name: item.name }
+    setPhotoIdInUrl(item.id, 'push')
+  }
+
+  function closeViewer() {
+    viewer = null
+    setPhotoIdInUrl(null, 'replace')
+  }
 
   async function loadFolder(folderId?: string, nextCrumbs?: Crumb[]) {
     loading = true
@@ -32,6 +60,7 @@
         crumbs = [{ id: result.folderId, name: result.name || 'Photos' }]
       }
       await loadThumbs(result.items.filter((i) => i.isImage))
+      syncViewerFromUrl()
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load folder'
       listing = null
@@ -74,7 +103,11 @@
   }
 
   onMount(() => {
+    syncViewerFromUrl()
     void loadFolder()
+    const onPopState = () => syncViewerFromUrl()
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   })
 
   onDestroy(() => {
@@ -130,7 +163,7 @@
               <button
                 type="button"
                 class="flex w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-foreground/30"
-                onclick={() => (viewer = { id: item.id, name: item.name })}
+                onclick={() => openPhoto(item)}
               >
                 <div class="aspect-square bg-muted/50">
                   {#if thumbUrls[item.id]}
@@ -159,6 +192,6 @@
   <PhotoViewer
     fileId={viewer.id}
     fileName={viewer.name}
-    onClose={() => (viewer = null)}
+    onClose={closeViewer}
   />
 {/if}
