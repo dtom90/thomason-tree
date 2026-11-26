@@ -19,6 +19,7 @@ export type DriveListResult = {
   name: string
   parents: string[]
   items: DriveItem[]
+  mode?: 'folder' | 'gallery'
 }
 
 export type AuthorInfo = {
@@ -67,18 +68,36 @@ export async function listDriveFolder(folderId?: string): Promise<DriveListResul
   return (await res.json()) as DriveListResult
 }
 
-/** Fetch image bytes with auth and return a blob: URL. Caller should revoke when done. */
-export async function fetchDriveImageUrl(
+/** All images under the family Drive root, as a flat list. */
+export async function listDriveGallery(): Promise<DriveListResult> {
+  const headers = await authHeaders()
+  const url = new URL(`${functionsBase}/drive-list`)
+  url.searchParams.set('mode', 'gallery')
+  const res = await fetch(url, { headers })
+  if (!res.ok) throw new Error(await readError(res))
+  return (await res.json()) as DriveListResult
+}
+
+/** Fetch image bytes with auth. Caller owns the blob. */
+export async function fetchDriveImageBlob(
   fileId: string,
   size: 'full' | 'thumb' = 'full',
-): Promise<string> {
+): Promise<Blob> {
   const headers = await authHeaders()
   const url = new URL(`${functionsBase}/drive-file`)
   url.searchParams.set('id', fileId)
   if (size === 'thumb') url.searchParams.set('size', 'thumb')
   const res = await fetch(url, { headers })
   if (!res.ok) throw new Error(await readError(res))
-  const blob = await res.blob()
+  return res.blob()
+}
+
+/** Fetch image bytes with auth and return a blob: URL. Caller should revoke when done. */
+export async function fetchDriveImageUrl(
+  fileId: string,
+  size: 'full' | 'thumb' = 'full',
+): Promise<string> {
+  const blob = await fetchDriveImageBlob(fileId, size)
   return URL.createObjectURL(blob)
 }
 

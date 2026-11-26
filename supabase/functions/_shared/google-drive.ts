@@ -204,30 +204,36 @@ export async function getWriteAccessToken(
   }
 }
 
-/** True if fileId is the root folder or a descendant of it. */
+/** True if fileId is the root folder or a descendant of it (any parent path). */
 export async function assertUnderRoot(
   accessToken: string,
   fileId: string,
   rootId: string,
 ): Promise<DriveFileMeta> {
-  const visited = new Set<string>()
-  let currentId = fileId
-  let meta: DriveFileMeta | null = null
+  if (fileId === rootId) {
+    return getFileMeta(accessToken, fileId)
+  }
 
-  while (currentId) {
-    if (currentId === rootId) {
-      if (!meta) meta = await getFileMeta(accessToken, fileId)
-      return meta
-    }
-    if (visited.has(currentId)) break
+  const meta = await getFileMeta(accessToken, fileId)
+  if ((meta.parents ?? []).includes(rootId)) return meta
+
+  // Walk every parent chain. Drive files can have multiple parents (e.g. organized
+  // into the family folder while still living under another folder); following only
+  // parents[0] falsely rejects those.
+  const visited = new Set<string>([fileId])
+  const queue = [...(meta.parents ?? [])]
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!
+    if (currentId === rootId) return meta
+    if (visited.has(currentId)) continue
     visited.add(currentId)
 
     const node = await getFileMeta(accessToken, currentId)
-    if (!meta) meta = node
-    const parents = node.parents ?? []
-    if (parents.length === 0) break
-    if (parents.includes(rootId)) return meta
-    currentId = parents[0]
+    for (const parentId of node.parents ?? []) {
+      if (parentId === rootId) return meta
+      if (!visited.has(parentId)) queue.push(parentId)
+    }
   }
 
   throw new ContainmentError(`File ${fileId} is outside the configured Drive root`)
