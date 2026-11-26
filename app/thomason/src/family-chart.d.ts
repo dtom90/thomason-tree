@@ -35,6 +35,13 @@ declare module 'family-chart' {
     ): EditTree
     setCardClickOpen(card: CardHtml): EditTree
     setOnChange(fn: () => void): EditTree
+    setOnDelete(
+      fn: (
+        datum: Datum,
+        deletePerson: () => void,
+        postSubmit: (props?: { delete?: boolean }) => void,
+      ) => void,
+    ): EditTree
     setOnFormCreation(
       fn: (props: { cont: HTMLElement; form_creator: { datum_id: string } }) => void,
     ): EditTree

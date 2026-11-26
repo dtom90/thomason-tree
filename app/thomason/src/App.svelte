@@ -3,7 +3,7 @@
   import { ModeWatcher } from 'mode-watcher'
   import ImagesIcon from '@lucide/svelte/icons/images'
   import NetworkIcon from '@lucide/svelte/icons/network'
-  import f3, { type Data, type EditTree } from 'family-chart'
+  import f3, { type Data, type Datum, type EditTree } from 'family-chart'
   import type { Session } from '@supabase/supabase-js'
   import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
   import { Button } from '$lib/components/ui/button/index.js'
@@ -64,6 +64,12 @@
   let linkOpen = $state(false)
   let linkPersonId = $state<string | null>(null)
   let linking = $state(false)
+  let deleteOpen = $state(false)
+  let deletePersonLabel = $state('')
+  let pendingDelete: {
+    deletePerson: () => void
+    postSubmit: (props?: { delete?: boolean }) => void
+  } | null = null
   let inviteOpen = $state(false)
   let invitePersonId = $state<string | null>(null)
   let invitePersonLabel = $state('')
@@ -553,7 +559,11 @@
       })
 
     if (treeEditor) {
-      tree.setOnChange(() => schedulePersist())
+      tree
+        .setOnDelete((datum, deletePerson, postSubmit) => {
+          requestDeletePerson(datum, deletePerson, postSubmit)
+        })
+        .setOnChange(() => schedulePersist())
     } else if (selfEditOnly && centerId) {
       tree
         .setCanEdit((datum) => datum.id === centerId)
@@ -706,6 +716,32 @@
     }
   }
 
+  function requestDeletePerson(
+    datum: Datum,
+    deletePerson: () => void,
+    postSubmit: (props?: { delete?: boolean }) => void,
+  ) {
+    const first = String(datum.data['first name'] ?? '').trim()
+    const last = String(datum.data['last name'] ?? '').trim()
+    deletePersonLabel = `${first} ${last}`.trim() || 'this person'
+    pendingDelete = { deletePerson, postSubmit }
+    deleteOpen = true
+  }
+
+  function confirmDeletePerson() {
+    const pending = pendingDelete
+    pendingDelete = null
+    deleteOpen = false
+    if (!pending) return
+    pending.deletePerson()
+    pending.postSubmit({ delete: true })
+  }
+
+  function cancelDeletePerson() {
+    pendingDelete = null
+    deleteOpen = false
+  }
+
   async function confirmUnlink() {
     unlinking = true
     try {
@@ -844,6 +880,30 @@
       {/if}
     </main>
   </div>
+
+  <AlertDialog.Root
+    bind:open={deleteOpen}
+    onOpenChange={(open) => {
+      if (!open) {
+        pendingDelete = null
+        deletePersonLabel = ''
+      }
+    }}
+  >
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>Delete {deletePersonLabel || 'this person'}?</AlertDialog.Title>
+        <AlertDialog.Description>
+          This removes them from the family tree. Related connections will be cleared. This cannot
+          be undone from here.
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel onclick={cancelDeletePerson}>Cancel</AlertDialog.Cancel>
+        <Button variant="destructive" onclick={confirmDeletePerson}>Delete</Button>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
 
   <AlertDialog.Root bind:open={unlinkOpen}>
     <AlertDialog.Content>
