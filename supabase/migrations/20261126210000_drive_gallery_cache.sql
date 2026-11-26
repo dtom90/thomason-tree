@@ -11,3 +11,4 @@ alter table public.drive_gallery_cache enable row level security;
 revoke all on table public.drive_gallery_cache from public;
 revoke all on table public.drive_gallery_cache from anon;
 revoke all on table public.drive_gallery_cache from authenticated;
+grant select, insert, update, delete on table public.drive_gallery_cache to service_role;
