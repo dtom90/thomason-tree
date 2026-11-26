@@ -181,8 +181,6 @@
     const due = pendingPersonInvites.filter((p) => persistedPersonIds.has(p.personId))
     if (due.length === 0) return
 
-    pendingPersonInvites = pendingPersonInvites.filter((p) => !persistedPersonIds.has(p.personId))
-
     for (const invite of due) {
       const label = personLabelFromData(invite.personId, invite.personLabel)
       try {
@@ -191,6 +189,11 @@
           email: invite.email,
           grantCanEdit: invite.grantCanEdit,
         })
+        // Drop from client queue only after create succeeds so the sidebar
+        // never flashes an empty invite status during the request.
+        pendingPersonInvites = pendingPersonInvites.filter((p) => p.personId !== invite.personId)
+        rememberLocalInvite(invite.personId, invite.email, invite.grantCanEdit)
+        refreshOpenInviteField(invite.personId)
         let emailed = false
         if (invite.email) {
           try {
@@ -224,7 +227,6 @@
         refreshOpenInviteField(invite.personId)
       } catch (err) {
         console.error('Pending invite failed', err)
-        queuePendingPersonInvite(invite)
         redeemNotice = errorMessage(err, `Could not send invite for ${label}.`)
         refreshOpenInviteField(invite.personId)
       }
@@ -348,18 +350,33 @@
     const status = personInviteStatusFor(personId)
     const action = inviteStatusActionLabel(status)
     const copy = escapeInviteHtml(inviteStatusCopy(status))
+    const editable = !form.classList.contains('non-editable')
 
     let inviteField = form.querySelector('.f3-invite-field')
     if (!(inviteField instanceof HTMLElement)) {
       inviteField = document.createElement('div')
-      inviteField.className = 'f3-form-field f3-invite-field'
       fields.appendChild(inviteField)
     }
+    inviteField.className = editable
+      ? 'f3-form-field f3-you-field f3-invite-field'
+      : 'f3-info-field f3-you-field f3-invite-field'
 
-    inviteField.innerHTML = `
+    inviteField.innerHTML = editable
+      ? `
       <label>Invite</label>
       <div class="f3-you-field-row">
         <span class="f3-you-field-copy">${copy}</span>
+        ${
+          action
+            ? `<button type="button" class="f3-invite-you-btn">${escapeInviteHtml(action)}</button>`
+            : ''
+        }
+      </div>
+    `
+      : `
+      <span class="f3-info-field-label">Invite</span>
+      <div class="f3-you-field-row">
+        <span class="f3-info-field-value f3-you-field-copy">${copy}</span>
         ${
           action
             ? `<button type="button" class="f3-invite-you-btn">${escapeInviteHtml(action)}</button>`
@@ -405,6 +422,25 @@
       return
     }
     invitesByPersonId = await loadPersonInvites()
+  }
+
+  /** Keep sidebar status correct even before/without a successful invites refetch. */
+  function rememberLocalInvite(
+    personId: string,
+    email: string | null,
+    grantCanEdit: boolean,
+  ) {
+    const next = new Map(invitesByPersonId)
+    next.set(personId, {
+      id: `local-${personId}`,
+      person_id: personId,
+      email,
+      grant_can_edit: grantCanEdit,
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      redeemed_at: null,
+    })
+    invitesByPersonId = next
   }
 
   function injectAccountLinkField(
@@ -532,31 +568,34 @@
         setPersonIdInUrl(personId)
         const form = cont.querySelector('.f3-form')
         if (!(form instanceof HTMLElement)) return
-        const datum = data.find((d) => d.id === personId)
+        const datum = data.find((d) => d.id === personId) ?? chartData.find((d) => d.id === personId)
         const first = String(datum?.data['first name'] ?? '').trim()
         const last = String(datum?.data['last name'] ?? '').trim()
         const personLabel = `${first} ${last}`.trim() || 'this person'
-        const isMe = linkedPerson?.id === personId
+        const isMe = linked?.id === personId
         const claimed = claimedPersonIds.has(personId)
         injectAccountLinkField(form, personId, {
           isMe,
-          canClaim: linkedPerson == null && !claimed,
+          canClaim: linked == null && !claimed,
           // Editors see invite status for everyone except themselves (including joined).
-          canInvite: canEditTree && !isMe,
+          canInvite: treeEditor && !isMe,
           personLabel,
           editable: !form.classList.contains('non-editable'),
-          selfEditOnly: linkedPerson != null && !canEditTree,
+          selfEditOnly: linked != null && !treeEditor,
         })
         // Editors: any person. Viewers: only their linked person.
         // Upload / avatar controls only appear while the sidebar is in edit mode.
         const editing = !form.classList.contains('non-editable')
-        const canManageOwnPhotos =
-          canEditTree || (linkedPerson != null && !canEditTree && isMe)
+        const canManageOwnPhotos = treeEditor || (linked != null && !treeEditor && isMe)
         injectPersonPhotos(form, personId, data, {
           editing,
           canUpload: canManageOwnPhotos,
           canSetAvatar: canManageOwnPhotos,
         })
+        // Keep status fresh when reopening a card (invites may have changed since initChart).
+        if (treeEditor && !isMe) {
+          void refreshInviteStatuses().then(() => refreshOpenInviteField(personId))
+        }
       })
 
     if (treeEditor) {
@@ -670,8 +709,8 @@
           email: email || null,
           grantCanEdit: inviteAsEditor,
         })
-        inviteQueued = true
         refreshOpenInviteField(personId)
+        inviteOpen = false
         return
       }
 
@@ -681,6 +720,8 @@
         grantCanEdit: inviteAsEditor,
       })
       inviteLink = link
+      rememberLocalInvite(personId, email || null, inviteAsEditor)
+      refreshOpenInviteField(personId)
       if (email) {
         try {
           await emailInviteLink({
