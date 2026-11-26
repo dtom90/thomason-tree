@@ -14,6 +14,40 @@ import {
   driveFetch,
 } from '../_shared/google-drive.ts'
 
+type ListedItem = {
+  id: string
+  name: string
+  mimeType: string
+  isFolder: boolean
+  isImage: boolean
+}
+
+type GalleryPayload = {
+  folderId: string
+  name: string
+  parents: string[]
+  items: ListedItem[]
+  mode: 'gallery'
+}
+
+/** Best-effort per-isolate cache; survives warm invokes, cleared on cold start. */
+const GALLERY_TTL_MS = 3 * 60 * 1000
+const galleryCache = new Map<string, { expiresAt: number; payload: GalleryPayload }>()
+
+function getCachedGallery(rootId: string): GalleryPayload | null {
+  const hit = galleryCache.get(rootId)
+  if (!hit) return null
+  if (Date.now() >= hit.expiresAt) {
+    galleryCache.delete(rootId)
+    return null
+  }
+  return hit.payload
+}
+
+function setCachedGallery(rootId: string, payload: GalleryPayload): void {
+  galleryCache.set(rootId, { expiresAt: Date.now() + GALLERY_TTL_MS, payload })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -40,19 +74,19 @@ Deno.serve(async (req) => {
     const rootId = getRootFolderId()
     const url = new URL(req.url)
     const mode = url.searchParams.get('mode') === 'gallery' ? 'gallery' : 'folder'
+    const refresh = url.searchParams.get('refresh') === '1'
     const folderId = mode === 'gallery' ? rootId : (url.searchParams.get('folderId') || rootId)
+
+    if (mode === 'gallery' && !refresh) {
+      const cached = getCachedGallery(rootId)
+      if (cached) {
+        return jsonResponse({ ...cached, cached: true })
+      }
+    }
 
     const sa = getServiceAccount()
     const accessToken = await getAccessToken(sa)
     const folder = await assertUnderRoot(accessToken, folderId, rootId)
-
-    type ListedItem = {
-      id: string
-      name: string
-      mimeType: string
-      isFolder: boolean
-      isImage: boolean
-    }
 
     async function listChildren(parentId: string): Promise<ListedItem[]> {
       const children: ListedItem[] = []
@@ -114,17 +148,27 @@ Deno.serve(async (req) => {
       }
       images.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
       items = images
-    } else {
-      items = await listChildren(folderId)
-      items.sort((a, b) => {
-        if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-      })
+
+      const payload: GalleryPayload = {
+        folderId: rootId,
+        name: 'All photos',
+        parents: folder.parents ?? [],
+        items,
+        mode: 'gallery',
+      }
+      setCachedGallery(rootId, payload)
+      return jsonResponse({ ...payload, cached: false })
     }
 
+    items = await listChildren(folderId)
+    items.sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
+
     return jsonResponse({
-      folderId: mode === 'gallery' ? rootId : folderId,
-      name: mode === 'gallery' ? 'All photos' : (folder.name ?? ''),
+      folderId,
+      name: folder.name ?? '',
       parents: folder.parents ?? [],
       items,
       mode,
